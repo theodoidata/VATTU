@@ -7,8 +7,9 @@ export interface Backend {
   rpc<T = any>(fn: string, p?: Record<string, unknown>): Promise<T>;
 }
 
-const url = import.meta.env.VITE_SUPABASE_URL as string | undefined;
-const key = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined;
+const env = import.meta.env;
+const url = (env.VITE_SUPABASE_URL || env.NEXT_PUBLIC_SUPABASE_URL) as string | undefined;
+const key = (env.VITE_SUPABASE_ANON_KEY || env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY || env.NEXT_PUBLIC_SUPABASE_ANON_KEY) as string | undefined;
 
 export const supabaseConfigured = Boolean(url && key && !url.includes('YOUR_PROJECT'));
 export const supabase: SupabaseClient | null = supabaseConfigured
