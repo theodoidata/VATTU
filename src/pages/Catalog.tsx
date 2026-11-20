@@ -1,0 +1,130 @@
+import { useMemo, useState } from 'react';
+import { Plus, Download } from 'lucide-react';
+import { useApp } from '../lib/app-context';
+import { Badge, Empty, Field, Loading, Modal, PageHeader, useAction, useRpc } from '../components/ui';
+import { fmtQty, norm } from '../lib/format';
+import type { Item } from '../lib/types';
+import { exportExcel, sheet } from '../lib/excel';
+
+export default function CatalogPage() {
+  const { groups, has, branches } = useApp();
+  const list = useRpc<Item[]>('list_items');
+  const [q, setQ] = useState('');
+  const [group, setGroup] = useState<number | ''>('');
+  const [editing, setEditing] = useState<Item | 'new' | null>(null);
+  const canEdit = has('inv_catalog_manage');
+  const rows = useMemo(() => {
+    const n = norm(q.trim());
+    return (list.data ?? []).filter(i => (!group || i.group_id === group) && (!n || norm(i.name).includes(n) || norm(i.code).includes(n)));
+  }, [list.data, q, group]);
+  const doExport = () => exportExcel('Danh-muc-vat-tu', [sheet('Danh mục', rows, [
+    { header: 'Mã', get: i => i.code, width: 12 }, { header: 'Tên vật tư', get: i => i.name, width: 40 }, { header: 'Nhóm', get: i => i.group_name, width: 24 },
+    { header: 'ĐV dùng', get: i => i.unit, width: 9 }, { header: 'ĐV nhập', get: i => i.purchase_unit ?? '', width: 9 }, { header: 'Quy đổi', get: i => Number(i.purchase_factor), width: 9 },
+    { header: 'Quản lý lô/HSD', get: i => (i.track_lot ? 'Có' : 'Không'), width: 14 }, { header: 'Tối thiểu mặc định', get: i => Number(i.default_min_qty), width: 16 },
+    ...branches.map(b => ({ header: 'Tối thiểu ' + b.name, get: (i: Item) => Number(i.mins[String(b.id)] ?? i.default_min_qty), width: 14 })),
+    { header: 'Đang dùng', get: i => (i.active ? 'Có' : 'Ngưng'), width: 10 },
+  ])]);
+  return (
+    <>
+      <PageHeader title="Danh mục vật tư" description="Tên – đơn vị tính – nhóm – quản lý số lô/hạn dùng – tồn tối thiểu (mặc định và riêng từng chi nhánh)."
+        actions={<>{has('inv_report_export') && <button className="btn" onClick={doExport}><Download size={16} /> Xuất Excel</button>}
+          {canEdit && <button className="btn btn-primary" onClick={() => setEditing('new')}><Plus size={16} /> Thêm vật tư</button>}</>} />
+      <section className="panel">
+        <div className="toolbar">
+          <input className="input" placeholder="Tìm theo tên hoặc mã…" value={q} onChange={e => setQ(e.target.value)} />
+          <select className="select" value={group} onChange={e => setGroup(e.target.value ? Number(e.target.value) : '')}><option value="">Tất cả nhóm</option>{groups.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}</select>
+          <span className="muted small">{rows.length} vật tư</span>
+        </div>
+        {list.loading ? <Loading /> : list.error ? <div className="notice danger">{list.error}</div> : !rows.length ? <Empty>Chưa có vật tư.</Empty> : (
+          <div className="table-wrap"><table className="data">
+            <thead><tr><th>Mã</th><th>Tên vật tư</th><th>Nhóm</th><th>ĐV dùng</th><th>ĐV nhập</th><th>Lô / HSD</th><th className="num">Tối thiểu mặc định</th><th>Riêng chi nhánh</th></tr></thead>
+            <tbody>{rows.map(i => (
+              <tr key={i.id} className="clickable" onClick={() => setEditing(i)} style={i.active ? undefined : { opacity: .5 }}>
+                <td className="mono small">{i.code}</td><td className="item-name">{i.name}{!i.active && <> <Badge>Ngưng dùng</Badge></>}</td>
+                <td className="small">{i.group_name}</td><td>{i.unit}</td>
+                <td className="small">{i.purchase_unit ? `${i.purchase_unit} = ${fmtQty(i.purchase_factor)} ${i.unit}` : '—'}</td>
+                <td>{i.track_lot ? <Badge tone="primary">Bắt buộc</Badge> : <span className="muted small">Không</span>}</td>
+                <td className="num">{fmtQty(i.default_min_qty)}</td>
+                <td className="small">{Object.keys(i.mins).length ? `${Object.keys(i.mins).length} chi nhánh` : '—'}</td>
+              </tr>
+            ))}</tbody>
+          </table></div>
+        )}
+      </section>
+      {editing && <ItemModal item={editing === 'new' ? null : editing} onClose={() => setEditing(null)} />}
+    </>
+  );
+}
+
+function ItemModal({ item, onClose }: { item: Item | null; onClose: () => void }) {
+  const { groups, has, branches, canAct, toast } = useApp();
+  const canEdit = has('inv_catalog_manage');
+  const canMin = has('inv_min_manage');
+  const [f, setF] = useState(() => ({
+    code: item?.code ?? '', name: item?.name ?? '', group_id: item?.group_id ?? groups[0]?.id ?? null, unit: item?.unit ?? '',
+    purchase_unit: item?.purchase_unit ?? '', purchase_factor: String(item?.purchase_factor ?? 1), track_lot: item?.track_lot ?? false,
+    default_min_qty: String(item?.default_min_qty ?? 0), note: item?.note ?? '', active: item?.active ?? true,
+  }));
+  const [mins, setMins] = useState<Record<string, string>>(() => Object.fromEntries(Object.entries(item?.mins ?? {}).map(([k, v]) => [k, String(v)])));
+  const { run, busy } = useAction();
+  const up = (p: Partial<typeof f>) => setF(x => ({ ...x, ...p }));
+
+  async function save() {
+    let id = item?.id;
+    if (canEdit) {
+      const r = await run<{ id: number }>('save_item', { ...f, id: item?.id ?? null });
+      if (!r) return;
+      id = r.id;
+    }
+    if (canMin && id) {
+      for (const b of branches) {
+        if (!canAct(b.id)) continue;
+        const before = item?.mins[String(b.id)];
+        const now = mins[String(b.id)];
+        const changed = (before == null ? '' : String(before)) !== (now ?? '');
+        if (changed && !(await run('save_min_qty', { item_id: id, branch_id: b.id, min_qty: now === '' || now == null ? null : Number(now) }))) return;
+      }
+    }
+    toast('Đã lưu vật tư', 'success');
+    onClose();
+  }
+  return (
+    <Modal title={item ? `Vật tư ${item.code}` : 'Thêm vật tư'} onClose={onClose} footer={<>
+      <button className="btn" onClick={onClose}>Đóng</button>
+      {(canEdit || canMin) && <button className="btn btn-primary" disabled={busy || (canEdit && (!f.code.trim() || !f.name.trim() || !f.unit.trim()))} onClick={save}>Lưu</button>}
+    </>}>
+      <fieldset disabled={!canEdit} style={{ border: 0, padding: 0, margin: 0 }}>
+        <div className="form-grid">
+          <Field label="Mã vật tư"><input className="input" value={f.code} onChange={e => up({ code: e.target.value.toUpperCase() })} placeholder="VD: TT-LIDO" /></Field>
+          <Field label="Nhóm"><select className="select" value={f.group_id ?? ''} onChange={e => up({ group_id: Number(e.target.value) })}>{groups.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}</select></Field>
+        </div>
+        <div style={{ marginTop: 10 }}><Field label="Tên vật tư (gồm hãng, quy cách)"><input className="input" value={f.name} onChange={e => up({ name: e.target.value })} placeholder="VD: Lidocaine 2% 1.8ml" /></Field></div>
+        <div className="form-grid" style={{ marginTop: 10 }}>
+          <Field label="Đơn vị dùng (tính tồn)"><input className="input" value={f.unit} onChange={e => up({ unit: e.target.value })} placeholder="ống, cái, tuýp…" /></Field>
+          <Field label="Đơn vị nhập (không bắt buộc)"><input className="input" value={f.purchase_unit} onChange={e => up({ purchase_unit: e.target.value })} placeholder="hộp, vỉ…" /></Field>
+          <Field label={`1 ${f.purchase_unit || 'đơn vị nhập'} = ? ${f.unit || 'đơn vị dùng'}`}><input className="input" type="number" min={1} value={f.purchase_factor} onChange={e => up({ purchase_factor: e.target.value })} /></Field>
+          <Field label={`Tồn tối thiểu mặc định (${f.unit || 'đv dùng'})`}><input className="input" type="number" min={0} value={f.default_min_qty} onChange={e => up({ default_min_qty: e.target.value })} /></Field>
+        </div>
+        <div className="row" style={{ marginTop: 12, gap: 18 }}>
+          <label className="check"><input type="checkbox" checked={f.track_lot} onChange={e => up({ track_lot: e.target.checked })} /> Bắt buộc nhập số lô và hạn sử dụng</label>
+          <label className="check"><input type="checkbox" checked={f.active} onChange={e => up({ active: e.target.checked })} /> Đang sử dụng</label>
+        </div>
+        <div style={{ marginTop: 10 }}><Field label="Ghi chú"><input className="input" value={f.note} onChange={e => up({ note: e.target.value })} /></Field></div>
+      </fieldset>
+      {item && (
+        <>
+          <h3 style={{ fontSize: 14, margin: '18px 0 8px' }}>Tồn tối thiểu riêng từng chi nhánh</h3>
+          <p className="muted small" style={{ marginTop: 0 }}>Để trống = dùng mức mặc định ({fmtQty(f.default_min_qty)}). Chi nhánh đông khách nên đặt cao hơn.</p>
+          <div className="form-grid">
+            {branches.map(b => (
+              <Field key={b.id} label={b.name}>
+                <input className="input sm" type="number" min={0} placeholder={`mặc định ${fmtQty(f.default_min_qty)}`} disabled={!canMin || !canAct(b.id)}
+                  value={mins[String(b.id)] ?? ''} onChange={e => setMins(m => ({ ...m, [String(b.id)]: e.target.value }))} />
+              </Field>
+            ))}
+          </div>
+        </>
+      )}
+    </Modal>
+  );
+}
