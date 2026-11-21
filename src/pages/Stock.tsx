@@ -12,7 +12,9 @@ type Filter = 'all' | 'alert' | 'below' | 'expiry';
 export default function StockPage() {
   const { branchId, branches, groups, today, has, canAct } = useApp();
   const branch = branches.find(b => b.id === branchId);
-  const { data, loading, error } = useRpc<StockRow[]>('get_stock', { branch_id: branchId });
+  // Mặc định chỉ tải vật tư đang có tồn / có mức tối thiểu (đỡ tốn dữ liệu); bật "showAll" để tải cả danh mục
+  const [showAll, setShowAll] = useState(false);
+  const { data, loading, error } = useRpc<StockRow[]>('get_stock', showAll ? { branch_id: branchId, all: true } : { branch_id: branchId });
   const [q, setQ] = useState('');
   const [group, setGroup] = useState<number | ''>('');
   const [filter, setFilter] = useState<Filter>(() => { const f = handoff.stockFilter ?? 'all'; handoff.stockFilter = undefined; return f; });
@@ -79,8 +81,9 @@ export default function StockPage() {
           <select className="select" value={group} onChange={e => setGroup(e.target.value ? Number(e.target.value) : '')}>
             <option value="">Tất cả nhóm</option>{groups.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
           </select>
+          <label className="check small"><input type="checkbox" checked={showAll} onChange={e => setShowAll(e.target.checked)} /> Hiện cả vật tư không có tồn</label>
         </div>
-        {loading ? <Loading /> : error ? <div className="notice danger">{error}</div> : rows.length === 0 ? <Empty>Không có vật tư phù hợp.</Empty> : (
+        {loading ? <Loading /> : error ? <div className="notice danger">{error}</div> : rows.length === 0 ? <Empty>{showAll ? 'Không có vật tư phù hợp.' : 'Không có vật tư phù hợp. Vật tư chưa có tồn đang được ẩn — tick “Hiện cả vật tư không có tồn” để xem.'}</Empty> : (
           <div className="table-wrap"><table className="data">
             <thead><tr><th style={{ width: 28 }} /><th>Vật tư</th><th className="hide-sm">Nhóm</th><th className="num">Tồn</th><th className="num">Còn dùng được</th><th className="num">Tối thiểu</th><th>Trạng thái</th><th>Hạn gần nhất</th></tr></thead>
             <tbody>{rows.map(r => {

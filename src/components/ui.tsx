@@ -70,6 +70,13 @@ export function Switch({ checked, onChange, disabled }: { checked: boolean; onCh
 export function Empty({ children }: { children: ReactNode }) { return <div className="empty">{children}</div>; }
 export function Loading() { return <div className="empty"><Loader2 className="spin" size={18} /> Đang tải…</div>; }
 
+/* Danh mục vật tư (811 dòng) ít khi đổi → nhớ trong phiên để khỏi tải lại mỗi lần mở trang (đỡ tốn dữ liệu).
+   Chỉ xóa bộ nhớ khi có thao tác sửa danh mục / mức tối thiểu, hoặc khi đổi người dùng. */
+const CACHED_FNS = new Set(['list_items']);
+const CATALOG_WRITES = new Set(['save_item', 'save_min_qty']);
+const rpcCache = new Map<string, Promise<unknown>>();
+export const clearRpcCache = () => rpcCache.clear();
+
 /** Gọi RPC + tự tải lại khi refreshKey đổi */
 export function useRpc<T>(fn: string | null, p: Record<string, unknown> = {}, deps: unknown[] = []) {
   const { backend, refreshKey } = useApp();
@@ -78,11 +85,20 @@ export function useRpc<T>(fn: string | null, p: Record<string, unknown> = {}, de
   const [loading, setLoading] = useState(true);
   const [tick, setTick] = useState(0);
   const key = JSON.stringify(p);
+  const lastTick = useRef(tick);
   useEffect(() => {
     if (!fn) { setLoading(false); return; }
     let alive = true;
-    setLoading(true);
-    backend.rpc<T>(fn, JSON.parse(key)).then(d => { if (alive) { setData(d); setError(null); } })
+    const ck = fn + key;
+    if (CACHED_FNS.has(fn) && lastTick.current !== tick) rpcCache.delete(ck); // bấm "tải lại" thì tải thật
+    lastTick.current = tick;
+    let req = CACHED_FNS.has(fn) ? rpcCache.get(ck) as Promise<T> | undefined : undefined;
+    if (!req) {
+      req = backend.rpc<T>(fn, JSON.parse(key));
+      if (CACHED_FNS.has(fn)) { rpcCache.set(ck, req); req.catch(() => rpcCache.delete(ck)); }
+      setLoading(true);
+    }
+    req.then(d => { if (alive) { setData(d); setError(null); } })
       .catch(e => { if (alive) setError((e as Error).message); })
       .finally(() => { if (alive) setLoading(false); });
     return () => { alive = false; };
@@ -100,8 +116,9 @@ export function useAction() {
     setBusy(true);
     try {
       const r = await backend.rpc<T>(fn, p);
+      if (CATALOG_WRITES.has(fn)) clearRpcCache();
       if (okMsg) toast(okMsg, 'success');
-      bump();
+      bump(fn);
       return r;
     } catch (e) {
       toast((e as Error).message, 'danger');

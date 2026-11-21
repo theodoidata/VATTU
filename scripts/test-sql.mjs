@@ -36,11 +36,15 @@ await ok('get_session kho Hạ Long', async () => {
 });
 await err('Tài khoản chưa kích hoạt bị chặn', () => call(U(8), 'get_stock', { branch_id: 5 }), 'chờ BGĐ');
 await ok('get_stock Hạ Long', async () => {
-  const s = await call(U(3), 'get_stock'); assert(s.length > 40); const m = s.find(x => x.code === 'TT-MEPI'); assert(Number(m.qty) > Number(m.usable_qty), 'có lô hết hạn');
+  const s = await call(U(3), 'get_stock'); assert(s.length > 5);
+  assert(s.every(x => Number(x.qty) > 0 || Number(x.min_qty) > 0), 'mặc định chỉ trả vật tư có tồn / có mức tối thiểu');
+  const all = await call(U(3), 'get_stock', { all: true }); assert(all.length > 40 && all.length >= s.length, 'all=true trả cả danh mục ' + all.length + '/' + s.length);
+  const m = s.find(x => x.code === 'TT-MEPI'); assert(Number(m.qty) > Number(m.usable_qty), 'có lô hết hạn');
 });
 await ok('Kho xem tồn chi nhánh khác (view_all)', async () => { const s = await call(U(3), 'get_stock', { branch_id: 1 }); assert(s.length > 0); });
 await err('Bác sĩ không xem được chi nhánh khác', () => call(U(4), 'get_stock', { branch_id: 1 }), 'tất cả chi nhánh');
-await ok('Ma trận tồn', async () => { const m = await call(U(3), 'get_stock_matrix'); assert(Object.keys(m[0].by_branch).length === 11); });
+await ok('Ma trận tồn', async () => { const m = await call(U(3), 'get_stock_matrix'); assert(m.length > 0 && m.every(r => Object.keys(r.by_branch).length > 0));
+  assert(m.every(r => Object.values(r.by_branch).every(c => Number(c.qty) > 0 || Number(c.min) > 0)), 'chỉ ô có tồn / có tối thiểu'); });
 
 const lido = await item('TT-LIDO');
 await ok('Xuất dùng trừ theo lô hết hạn trước', async () => {

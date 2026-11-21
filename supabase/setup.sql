@@ -605,7 +605,11 @@ begin
                         order by l.expiry_date nulls last, l.id), '[]'::jsonb) as lots
           from stock_lots l
          where l.branch_id = v_branch and l.item_id = i.id and l.qty > 0) st
-     where i.active);
+     where i.active
+       -- Tiết kiệm dữ liệu: mặc định chỉ trả vật tư đang có tồn hoặc có đặt mức tối thiểu.
+       -- p.all = true để lấy cả danh mục.
+       and (coalesce((p->>'all')::boolean, false) or st.qty > 0
+            or coalesce(s.min_qty, i.default_min_qty) > 0));
 end $$;
 
 -- Ma trận tồn: vật tư × chi nhánh
@@ -621,20 +625,23 @@ begin
     select coalesce(jsonb_agg(jsonb_build_object(
              'id', i.id, 'code', i.code, 'name', i.name, 'unit', i.unit,
              'group_id', i.group_id, 'group_name', g.name,
-             'by_branch', (
-               select jsonb_object_agg(b.id::text, jsonb_build_object(
-                        'qty', coalesce(x.qty, 0), 'usable', coalesce(x.usable, 0),
-                        'min', coalesce(s.min_qty, i.default_min_qty)))
-                 from branches b
-                 left join item_branch_settings s on s.item_id = i.id and s.branch_id = b.id
-                 left join lateral (
-                   select sum(l.qty) as qty,
-                          sum(l.qty) filter (where l.expiry_date is null or l.expiry_date >= v_today) as usable
-                     from stock_lots l where l.item_id = i.id and l.branch_id = b.id) x on true
-                where b.active))
+             'by_branch', bb.v)
            order by g.sort_order, i.name), '[]'::jsonb)
       from items i left join item_groups g on g.id = i.group_id
-     where i.active);
+      -- Tiết kiệm dữ liệu: chỉ ghi ô chi nhánh có tồn hoặc có mức tối thiểu (ô thiếu = 0);
+      -- bỏ hẳn vật tư không có ô nào.
+      cross join lateral (
+        select jsonb_object_agg(b.id::text, jsonb_build_object(
+                 'qty', coalesce(x.qty, 0), 'usable', coalesce(x.usable, 0),
+                 'min', coalesce(s.min_qty, i.default_min_qty))) as v
+          from branches b
+          left join item_branch_settings s on s.item_id = i.id and s.branch_id = b.id
+          left join lateral (
+            select sum(l.qty) as qty,
+                   sum(l.qty) filter (where l.expiry_date is null or l.expiry_date >= v_today) as usable
+              from stock_lots l where l.item_id = i.id and l.branch_id = b.id and l.qty > 0) x on true
+         where b.active and (coalesce(x.qty, 0) > 0 or coalesce(s.min_qty, i.default_min_qty) > 0)) bb
+     where i.active and bb.v is not null);
 end $$;
 
 -- ---------------------------------------------------------------------

@@ -17,7 +17,8 @@ export type AppCtx = {
   canViewAll: boolean;
   toast: (msg: string, tone?: 'success' | 'danger' | 'info') => void;
   refreshKey: number;
-  bump: () => void;
+  /** báo đã ghi dữ liệu (fn = tên hàm vừa gọi) → các trang đang mở tải lại */
+  bump: (fn?: string) => void;
   go: (page: string) => void;
 };
 

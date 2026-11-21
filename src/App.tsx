@@ -5,6 +5,7 @@ import {
 } from 'lucide-react';
 import { DEMO_USERS, demoBackend, preloadDemo, supabase, supabaseBackend, supabaseConfigured, type Backend } from './lib/backend';
 import { Ctx, type AppCtx } from './lib/app-context';
+import { clearRpcCache } from './components/ui';
 import type { Session, Transfer } from './lib/types';
 import Dashboard from './pages/Dashboard';
 import StockPage from './pages/Stock';
@@ -130,7 +131,10 @@ function Shell({ backend, onSignOut, demo }: { backend: Backend; onSignOut: () =
   const [branchId, setBranchIdState] = useState<number>(0);
   const [inbox, setInbox] = useState(0);
 
+  const [transferTick, setTransferTick] = useState(0);
+
   useEffect(() => {
+    clearRpcCache();
     backend.rpc<Session>('get_session').then(s => {
       setSession(s);
       const saved = Number(store.get('branch-' + (s.profile?.id ?? '')));
@@ -160,7 +164,8 @@ function Shell({ backend, onSignOut, demo }: { backend: Backend; onSignOut: () =
       backend, session, has, branches: session.branches, groups: session.groups, today: session.today,
       branchId, setBranchId: (id: number) => { store.set('branch-' + session.profile!.id, String(id)); setBranchIdState(id); },
       canAct, canViewAll: has('inv_stock_view_all') || has('inv_all_branches') || has('inv_report_view_all'),
-      toast, refreshKey, bump: () => setRefreshKey(k => k + 1),
+      toast, refreshKey,
+      bump: (fn?: string) => { setRefreshKey(k => k + 1); if (!fn || fn.includes('transfer')) setTransferTick(t => t + 1); },
       go: (p: string) => { window.location.hash = p; },
     };
   }, [session, backend, branchId, toast, refreshKey]);
@@ -172,7 +177,9 @@ function Shell({ backend, onSignOut, demo }: { backend: Backend; onSignOut: () =
     if (!canSee) return;
     backend.rpc<Transfer[]>('list_transfers', { status: ['pending', 'approved', 'shipped'] })
       .then(l => setInbox(l.filter(t => transferNeedsMe(t, ctx)).length)).catch(() => setInbox(0));
-  }, [ctx, backend]);
+    // Chỉ đếm lại khi mở web, đổi chi nhánh hoặc vừa thao tác điều chuyển — không tải lại sau mọi thao tác.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [session, backend, branchId, transferTick]);
 
   const demoBar = demo && (
     <div className="demo-bar">
