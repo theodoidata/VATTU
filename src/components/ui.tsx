@@ -232,10 +232,10 @@ export function BranchSelect({ value, onChange, includeAll, onlyActable, classNa
   );
 }
 
-/* ---------------- Phân trang dùng chung: 20 / 50 / 100 dòng, nhớ lựa chọn cho cả hệ thống ---------------- */
-const PAGE_SIZES = [20, 50, 100] as const;
-const SIZE_KEY = 'kho-page-size';
-const readSize = () => { try { const n = Number(localStorage.getItem(SIZE_KEY)); return (PAGE_SIZES as readonly number[]).includes(n) ? n : 20; } catch { return 20; } };
+/* ---------------- Phân trang dùng chung: 10 / 20 / 50 / 100 dòng, nhớ lựa chọn cho cả hệ thống ---------------- */
+const PAGE_SIZES = [10, 20, 50, 100] as const;
+const SIZE_KEY = 'kho-page-size-v2'; // đổi tên khóa để mọi máy về mặc định 10 dòng
+const readSize = () => { try { const n = Number(localStorage.getItem(SIZE_KEY)); return (PAGE_SIZES as readonly number[]).includes(n) ? n : 10; } catch { return 10; } };
 let sharedSize = readSize();
 const sizeListeners = new Set<(n: number) => void>();
 function setSharedSize(n: number) {
