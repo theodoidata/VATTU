@@ -1139,9 +1139,10 @@ begin
   end loop;
 
   if coalesce((p->>'submit')::boolean, false) then
-    if exists (select 1 from stocktake_lines where stocktake_id = s.id and counted_qty is null) then
-      raise exception 'Còn dòng chưa nhập số đếm. Nhập 0 nếu không còn hàng.';
-    end if;
+    -- Dòng để trống khi nộp = không tìm thấy hàng → tính là 0 (web đã hỏi xác nhận trước khi nộp)
+    update stocktake_lines set counted_qty = 0,
+           note = coalesce(note, 'Không tìm thấy (để trống khi nộp)')
+     where stocktake_id = s.id and counted_qty is null;
     update stocktakes set status = 'submitted', submitted_by = me.id, submitted_at = now() where id = s.id;
   end if;
   return jsonb_build_object('ok', true);

@@ -87,6 +87,7 @@ function StocktakeDetail({ id, onBack }: { id: number; onBack: () => void }) {
   const counted = lines.filter(l => val(l) !== '').length;
   const diffs = lines.filter(l => val(l) !== '' && Number(val(l)) !== Number(l.system_qty));
   const showSystem = showSys || !editable;
+  const [confirmBlank, setConfirmBlank] = useState(false);
   const pgL = usePaged(filtered, q);
 
   const payload = (submit: boolean) => ({
@@ -122,7 +123,7 @@ function StocktakeDetail({ id, onBack }: { id: number; onBack: () => void }) {
           <button className="btn" onClick={onBack}><ArrowLeft size={16} /> Danh sách</button>
           {has('inv_report_export') && <button className="btn" onClick={doExport}><Download size={16} /> Excel</button>}
           {editable && <button className="btn" disabled={busy} onClick={() => save(false)}><Save size={16} /> Lưu nháp</button>}
-          {editable && <button className="btn btn-primary" disabled={busy || counted < lines.length} title={counted < lines.length ? 'Nhập đủ số đếm cho mọi dòng (0 nếu hết)' : ''} onClick={() => save(true)}><Send size={16} /> Nộp phiếu</button>}
+          {editable && <button className="btn btn-primary" disabled={busy} onClick={() => (counted < lines.length ? setConfirmBlank(true) : save(true))}><Send size={16} /> Nộp phiếu</button>}
           {s.status === 'submitted' && has('inv_stocktake_approve') && canAct(s.branch_id) && <>
             <button className="btn" disabled={busy} onClick={() => action('reopen', 'Đã mở lại phiếu để đếm tiếp')}><Undo2 size={16} /> Trả lại đếm</button>
             <button className="btn btn-success" disabled={busy} onClick={() => action('approve', 'Đã chốt kiểm kê và điều chỉnh tồn')}><CheckCheck size={16} /> Chốt & điều chỉnh tồn</button></>}
@@ -170,6 +171,13 @@ function StocktakeDetail({ id, onBack }: { id: number; onBack: () => void }) {
         </table></div>{pgL.pager}</>
         {editable && <button className="btn btn-sm" style={{ marginTop: 8 }} onClick={() => setExtra(es => [...es, { key: seq++, item_id: null, lot_no: '', expiry_date: '', counted_qty: '' }])}><Plus size={14} /> Thêm vật tư / lô tìm thấy ngoài danh sách</button>}
       </section>
+      {confirmBlank && <Modal size="narrow" title="Nộp phiếu kiểm kê" onClose={() => setConfirmBlank(false)} footer={<>
+        <button className="btn" onClick={() => setConfirmBlank(false)}>Quay lại đếm tiếp</button>
+        <button className="btn btn-primary" disabled={busy} onClick={async () => { setConfirmBlank(false); await save(true); }}><Send size={16} /> Nộp, tính dòng trống là 0</button>
+      </>}>
+        <p style={{ marginTop: 0 }}>Còn <b>{lines.length - counted}</b> dòng chưa nhập số đếm.</p>
+        <p className="muted small">Các dòng này sẽ được tính là <b>0 (không tìm thấy hàng)</b>. Khi quản lý chốt phiếu, tồn của chúng sẽ về 0. Nếu chỉ là chưa đếm tới, bấm “Quay lại đếm tiếp”.</p>
+      </Modal>}
     </>
   );
 }

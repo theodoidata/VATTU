@@ -125,6 +125,17 @@ await ok('Kiểm kê: tạo → đếm → nộp → chốt điều chỉnh tồ
   assert(after === before - 1, `điều chỉnh sai ${before} → ${after}`);
 });
 
+await ok('Kiểm kê: nộp khi còn dòng trống → dòng trống tính là 0', async () => {
+  const st = await call(U(6), 'create_stocktake', { group_id: 2 });
+  const d = await call(U(6), 'get_stocktake', { id: st.id });
+  assert(d.lines.length > 1);
+  await call(U(6), 'save_stocktake', { id: st.id, lines: [{ id: d.lines[0].id, counted_qty: 1 }], submit: true });
+  const d2 = await call(U(6), 'get_stocktake', { id: st.id });
+  assert(d2.status === 'submitted' && d2.lines.every(l => l.counted_qty !== null));
+  assert(d2.lines.filter(l => l.id !== d.lines[0].id).every(l => Number(l.counted_qty) === 0), 'dòng trống phải = 0');
+  await call(U(5), 'stocktake_action', { id: st.id, action: 'cancel' });
+});
+
 await ok('Báo cáo xuất dùng / điều chuyển', async () => {
   const u = await call(U(2), 'report_usage', {}); assert(u.length > 0 && u.every(r => r.branch_id === 5));
   const ua = await call(U(1), 'report_usage', {}); assert(new Set(ua.map(r => r.branch_id)).size === 11);
