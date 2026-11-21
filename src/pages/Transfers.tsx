@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Plus, Trash2, Send, Check, X, PackageCheck, Truck, Lightbulb } from 'lucide-react';
 import { useApp, type AppCtx } from '../lib/app-context';
-import { Badge, Empty, Field, ItemPicker, Loading, Modal, PageHeader, ReasonModal, useAction, useRpc, usePaged } from '../components/ui';
-import { TRANSFER_STATUS, fmtDate, fmtDateTime, fmtQty } from '../lib/format';
+import { Badge, Empty, Field, ItemPicker, ItemQtyInput, Loading, Modal, PageHeader, ReasonModal, useAction, useRpc, usePaged, useUnits } from '../components/ui';
+import { TRANSFER_STATUS, fmtDate, fmtDateTime, fmtQty, fmtUnits } from '../lib/format';
 import type { Item, MatrixRow, StockRow, Transfer, TransferLine } from '../lib/types';
 import { handoff } from '../lib/handoff';
 
@@ -20,6 +20,7 @@ type Tab = 'todo' | 'in' | 'out' | 'all';
 export default function TransfersPage() {
   const app = useApp();
   const { branchId, branches, has, canAct } = app;
+  const U = useUnits();
   const branch = branches.find(b => b.id === branchId);
   const list = useRpc<Transfer[]>('list_transfers', { limit: 300 });
   const [tab, setTab] = useState<Tab>('todo');
@@ -59,7 +60,7 @@ export default function TransfersPage() {
               <tr key={t.id} className="clickable" onClick={() => setOpenId(t.id)}>
                 <td><b className="mono">{t.code}</b>{transferNeedsMe(t, app) && <div><Badge tone="danger">Cần bạn xử lý</Badge></div>}</td>
                 <td>{t.to_branch_name}</td><td>{t.from_branch_name}</td>
-                <td className="small">{t.lines.slice(0, 2).map(l => `${l.item_name} ×${fmtQty(l.qty_approved ?? l.qty_requested)}`).join('; ')}{t.lines.length > 2 && ` … +${t.lines.length - 2}`}</td>
+                <td className="small">{t.lines.slice(0, 2).map(l => `${l.item_name} ×${U(l.qty_approved ?? l.qty_requested, l.item_id, l.unit)}`).join('; ')}{t.lines.length > 2 && ` … +${t.lines.length - 2}`}</td>
                 <td><Badge tone={TRANSFER_STATUS[t.status].tone}>{TRANSFER_STATUS[t.status].label}</Badge>
                   {t.kind === 'push' && <div><Badge tone="info">Cấp chủ động</Badge></div>}{t.has_shortage && <div><Badge tone="danger">Nhận thiếu</Badge></div>}</td>
                 <td className="small nowrap">{fmtDateTime(t.requested_at)}</td><td className="small">{t.requested_by_name}</td>
@@ -80,6 +81,7 @@ let seq = 1;
 
 function CreateModal({ onClose, onCreated }: { onClose: () => void; onCreated: (id: number | null) => void }) {
   const { branchId, branches, canViewAll } = useApp();
+  const U = useUnits();
   const items = useRpc<Item[]>('list_items');
   const matrix = useRpc<MatrixRow[]>(canViewAll ? 'get_stock_matrix' : null);
   const [draft] = useState(() => { const d = handoff.transferDraft; handoff.transferDraft = undefined; return d; });
@@ -145,7 +147,7 @@ function CreateModal({ onClose, onCreated }: { onClose: () => void; onCreated: (
     </>}>
       <div className="table-wrap"><table className="data lines-table transfer-lines">
         <thead><tr>
-          <th style={{ minWidth: 220 }}>Vật tư cần</th><th className="num" style={{ width: 150 }}>Số lượng</th>
+          <th style={{ minWidth: 220 }}>Vật tư cần</th><th className="num" style={{ width: 170 }}>Số lượng</th>
           <th style={{ width: 150 }}>Xin từ chi nhánh</th><th style={{ width: 40 }} />
           {canViewAll && others.map(b => <th key={b.id} className="num br-col" title={`Còn dùng được ở ${b.name}`}>{b.name}</th>)}
         </tr></thead>
@@ -154,7 +156,7 @@ function CreateModal({ onClose, onCreated }: { onClose: () => void; onCreated: (
           return (
             <tr key={l.key}>
               <td><ItemPicker items={activeItems} value={l.item_id} onChange={id => set(l.key, { item_id: id, manual: false })} exclude={lines.filter(x => x.key !== l.key).map(x => x.item_id!).filter(Boolean)} /></td>
-              <td className="num"><div className="qty-cell"><input className="input sm" type="number" min={0} step="any" value={l.qty} onChange={e => set(l.key, { qty: e.target.value })} /><span className="muted small">{it?.unit}</span></div></td>
+              <td className="num"><ItemQtyInput itemId={l.item_id} unit={it?.unit} value={l.qty} onChange={v => set(l.key, { qty: v })} /></td>
               <td><select className="select sm" style={{ width: '100%' }} value={l.src ?? ''} onChange={e => set(l.key, { src: e.target.value ? Number(e.target.value) : null, manual: true })}>
                 <option value="">— Chọn —</option>{others.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
               </select></td>
@@ -164,7 +166,7 @@ function CreateModal({ onClose, onCreated }: { onClose: () => void; onCreated: (
                 const enough = u > 0 && u >= Number(l.qty || 0);
                 const picked = l.src === b.id;
                 return <td key={b.id} className={`num br-col${picked ? ' picked' : ''}${l.item_id && u > 0 ? ' pickable' : ''}`}
-                  title={l.item_id ? `${b.name}: còn dùng được ${fmtQty(u)}${Number(c.min) ? ` · tối thiểu ${fmtQty(c.min)}` : ''}${u > 0 ? ' — bấm để xin từ đây' : ''}` : ''}
+                  title={l.item_id ? `${b.name}: còn dùng được ${U(u, l.item_id)}${Number(c.min) ? ` · tối thiểu ${U(c.min, l.item_id)}` : ''}${u > 0 ? ' — bấm để xin từ đây' : ''}` : ''}
                   onClick={() => { if (l.item_id && u > 0) set(l.key, { src: b.id, manual: true }); }}>
                   {!l.item_id ? '' : u > 0 ? <span style={{ color: enough ? 'var(--td-success)' : undefined, fontWeight: enough ? 700 : 400 }}>{fmtQty(u)}</span> : <span className="muted">0</span>}
                 </td>;
@@ -197,7 +199,7 @@ function PushModal({ onClose, onCreated }: { onClose: () => void; onCreated: (id
   const byId = useMemo(() => new Map((stock.data ?? []).map(r => [r.id, r])), [stock.data]);
   const pickItems = useMemo(() => (stock.data ?? []).filter(r => Number(r.usable_qty) > 0).map(r => ({
     id: r.id, code: r.code, name: r.name, unit: r.unit, group_name: r.group_name,
-    extra: <span>còn {fmtQty(r.usable_qty)} {r.unit}</span>,
+    extra: <span>còn {fmtUnits(r.usable_qty, r)}</span>,
   })), [stock.data]);
   const set = (key: number, patch: Partial<PushLine>) => setLines(ls => ls.map(l => (l.key === key ? { ...l, ...patch } : l)));
   const valid = lines.filter(l => l.item_id && Number(l.qty) > 0);
@@ -227,15 +229,15 @@ function PushModal({ onClose, onCreated }: { onClose: () => void; onCreated: (id
       </div>
       {stock.loading ? <Loading /> : (
         <div className="table-wrap"><table className="data lines-table">
-          <thead><tr><th style={{ minWidth: 260 }}>Vật tư gửi đi</th><th className="num" style={{ width: 150 }}>Số lượng</th><th className="num" style={{ width: 140 }}>Còn dùng được</th><th style={{ width: 40 }} /></tr></thead>
+          <thead><tr><th style={{ minWidth: 260 }}>Vật tư gửi đi</th><th className="num" style={{ width: 170 }}>Số lượng</th><th className="num" style={{ width: 140 }}>Còn dùng được</th><th style={{ width: 40 }} /></tr></thead>
           <tbody>{lines.map(l => {
             const r = l.item_id ? byId.get(l.item_id) : undefined;
             const bad = r && Number(l.qty) > Number(r.usable_qty);
             return (
               <tr key={l.key}>
                 <td><ItemPicker items={pickItems} value={l.item_id} onChange={id => set(l.key, { item_id: id })} exclude={lines.filter(x => x.key !== l.key).map(x => x.item_id!).filter(Boolean)} /></td>
-                <td className="num"><div className="qty-cell"><input className="input sm" type="number" min={0} step="any" value={l.qty} onChange={e => set(l.key, { qty: e.target.value })} style={bad ? { borderColor: 'var(--td-danger)' } : undefined} /><span className="muted small">{r?.unit}</span></div></td>
-                <td className="num">{r ? <span className={bad ? 'text-danger' : ''}>{fmtQty(r.usable_qty)} {r.unit}</span> : ''}</td>
+                <td className="num"><ItemQtyInput itemId={l.item_id} unit={r?.unit} value={l.qty} onChange={v => set(l.key, { qty: v })} bad={Boolean(bad)} /></td>
+                <td className="num">{r ? <span className={bad ? 'text-danger' : ''}>{fmtUnits(r.usable_qty, r)}</span> : ''}</td>
                 <td><button className="btn btn-ghost btn-sm icon-only" onClick={() => setLines(ls => ls.length > 1 ? ls.filter(x => x.key !== l.key) : [{ key: seq++, item_id: null, qty: '' }])} aria-label="Xóa dòng"><Trash2 size={15} /></button></td>
               </tr>
             );
@@ -250,6 +252,7 @@ function PushModal({ onClose, onCreated }: { onClose: () => void; onCreated: (id
 
 /** A xác nhận nhận hàng: nhập số thực nhận từng dòng, thiếu thì bắt buộc ghi lý do */
 function ReceiveModal({ t, busy, onClose, onConfirm }: { t: Transfer; busy: boolean; onClose: () => void; onConfirm: (lines: { line_id: number; qty_received: number }[], note: string, short: boolean) => void }) {
+  const U = useUnits();
   const shipped = (l: TransferLine) => l.lots.reduce((s, x) => s + Number(x.qty), 0);
   const sent = t.lines.filter(l => shipped(l) > 0);
   const [got, setGot] = useState<Record<number, string>>(() => Object.fromEntries(sent.map(l => [l.id, String(shipped(l))])));
@@ -266,13 +269,13 @@ function ReceiveModal({ t, busy, onClose, onConfirm }: { t: Transfer; busy: bool
     </>}>
       <p className="small muted" style={{ marginTop: 0 }}>Kiểm đếm hàng thực tế. Đủ thì giữ nguyên số; thiếu thì sửa <b>Thực nhận</b>. Kho {t.to_branch_name} chỉ được cộng đúng số thực nhận, phần thiếu được ghi lại để BGĐ xử lý.</p>
       <div className="table-wrap"><table className="data">
-        <thead><tr><th>Vật tư</th><th className="num" style={{ width: 120 }}>Đã gửi</th><th className="num" style={{ width: 160 }}>Thực nhận</th><th className="num" style={{ width: 100 }}>Thiếu</th></tr></thead>
+        <thead><tr><th>Vật tư</th><th className="num" style={{ width: 120 }}>Đã gửi</th><th className="num" style={{ width: 180 }}>Thực nhận</th><th className="num" style={{ width: 100 }}>Thiếu</th></tr></thead>
         <tbody>{rows.map(({ l, s, bad, short }) => (
           <tr key={l.id}>
             <td><span className="item-name">{l.item_name}</span> <span className="item-code">{l.item_code}</span></td>
-            <td className="num">{fmtQty(s)} {l.unit}</td>
-            <td className="num"><div className="qty-cell"><input className="input sm" type="number" min={0} max={s} step="any" value={got[l.id]} onChange={e => setGot(g => ({ ...g, [l.id]: e.target.value }))} style={bad ? { borderColor: 'var(--td-danger)' } : undefined} /><span className="muted small">{l.unit}</span></div></td>
-            <td className="num">{short > 0 ? <b className="text-danger">{fmtQty(short)}</b> : <span className="muted">0</span>}</td>
+            <td className="num">{U(s, l.item_id, l.unit)}</td>
+            <td className="num"><ItemQtyInput itemId={l.item_id} unit={l.unit} value={got[l.id]} max={s} onChange={v => setGot(g => ({ ...g, [l.id]: v }))} bad={bad} /></td>
+            <td className="num">{short > 0 ? <b className="text-danger">{U(short, l.item_id, l.unit)}</b> : <span className="muted">0</span>}</td>
           </tr>
         ))}</tbody>
       </table></div>
@@ -288,6 +291,7 @@ function ReceiveModal({ t, busy, onClose, onConfirm }: { t: Transfer; busy: bool
 function DetailModal({ t, onClose }: { t: Transfer; onClose: () => void }) {
   const app = useApp();
   const { has, session } = app;
+  const U = useUnits();
   const { run, busy } = useAction();
   const [approveQty, setApproveQty] = useState<Record<number, string>>(() => Object.fromEntries(t.lines.map(l => [l.id, String(l.qty_approved ?? l.qty_requested)])));
   const [ask, setAsk] = useState<null | 'reject' | 'cancel' | 'receive'>(null);
@@ -340,14 +344,14 @@ function DetailModal({ t, onClose }: { t: Transfer; onClose: () => void }) {
         <tbody>{t.lines.map(l => (
           <tr key={l.id}>
             <td><span className="item-name">{l.item_name}</span> <span className="item-code">{l.item_code}</span></td>
-            <td className="num">{fmtQty(l.qty_requested)} {l.unit}</td>
+            <td className="num">{U(l.qty_requested, l.item_id, l.unit)}</td>
             <td className="num">{s === 'pending' && has('inv_transfer_approve') && mine(t.from_branch_id)
-              ? <input className="input sm" type="number" min={0} step="any" style={{ width: 80, textAlign: 'right' }} value={approveQty[l.id]} onChange={e => setApproveQty(q => ({ ...q, [l.id]: e.target.value }))} />
-              : l.qty_approved == null ? '—' : `${fmtQty(l.qty_approved)} ${l.unit}`}</td>
-            <td className="small mono">{l.lots.length ? l.lots.map(x => `${x.lot_no || '—'} (HSD ${fmtDate(x.expiry_date)}) ×${fmtQty(x.qty)}`).join('; ') : '—'}</td>
+              ? <ItemQtyInput itemId={l.item_id} unit={l.unit} value={approveQty[l.id]} onChange={v => setApproveQty(q => ({ ...q, [l.id]: v }))} />
+              : l.qty_approved == null ? '—' : U(l.qty_approved, l.item_id, l.unit)}</td>
+            <td className="small mono">{l.lots.length ? l.lots.map(x => `${x.lot_no || '—'} (HSD ${fmtDate(x.expiry_date)}) ×${U(x.qty, l.item_id, l.unit)}`).join('; ') : '—'}</td>
             {s === 'received' && <td className="num">{l.qty_received == null || Number(l.qty_received) >= Number(l.qty_approved ?? 0)
-              ? `${fmtQty(l.qty_received ?? l.qty_approved)} ${l.unit}`
-              : <b className="text-danger" title={`Thiếu ${fmtQty(Number(l.qty_approved) - Number(l.qty_received))}`}>{fmtQty(l.qty_received)} {l.unit} (thiếu {fmtQty(Number(l.qty_approved) - Number(l.qty_received))})</b>}</td>}
+              ? U(l.qty_received ?? l.qty_approved, l.item_id, l.unit)
+              : <b className="text-danger">{U(l.qty_received, l.item_id, l.unit)} (thiếu {U(Number(l.qty_approved) - Number(l.qty_received), l.item_id, l.unit)})</b>}</td>}
           </tr>
         ))}</tbody>
       </table></div>

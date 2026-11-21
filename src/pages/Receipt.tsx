@@ -1,13 +1,15 @@
 import { useMemo, useState } from 'react';
 import { Plus, Trash2, Save, Pencil, Clock, X } from 'lucide-react';
 import { useApp } from '../lib/app-context';
-import { Empty, Field, ItemPicker, Loading, Modal, PageHeader, UnitInput, readDraft, useAction, useFormDraft, useRpc, usePaged } from '../components/ui';
-import { addDays, fmtDate, fmtDateTime, fmtQty } from '../lib/format';
+import { Empty, Field, ItemPicker, Loading, Modal, PageHeader, QtyInput, UnitInput, readDraft, useAction, useFormDraft, useRpc, usePaged, useUnits } from '../components/ui';
+import { addDays, fmtDate, fmtDateTime, fmtQty, hasPack } from '../lib/format';
 import type { Item, ReceiptDoc } from '../lib/types';
 
 type Line = { key: number; item_id: number | null; qty: string; unit_mode: 'base' | 'purchase'; lot_no: string; expiry_date: string };
 let seq = 1;
 const newLine = (): Line => ({ key: seq++, item_id: null, qty: '', unit_mode: 'purchase', lot_no: '', expiry_date: '' });
+/** Số lượng của dòng quy ra đơn vị nhỏ (dòng cũ có thể đang ghi theo đơn vị nhập) */
+const baseQty = (l: Line, it?: Item) => Number(l.qty || 0) * (l.unit_mode === 'purchase' && it?.purchase_unit ? Number(it.purchase_factor) : 1);
 type Head = { date: string; supplier: string; source: string; note: string };
 type FormDraft = Head & { lines: Line[] };
 
@@ -38,18 +40,22 @@ function LinesEditor({ lines, setLines, date }: { lines: Line[]; setLines: (f: (
   const set = (key: number, patch: Partial<Line>) => setLines(ls => ls.map(l => (l.key === key ? { ...l, ...patch } : l)));
   return (<>
     <div className="table-wrap stack-sm"><table className="data lines-table">
-      <thead><tr><th style={{ minWidth: 240 }}>Vật tư</th><th className="num" style={{ width: 100 }}>Số lượng</th><th style={{ width: 120 }}>Đơn vị</th>
+      <thead><tr><th style={{ minWidth: 240 }}>Vật tư</th><th className="num" style={{ width: 170 }}>Số lượng</th><th style={{ width: 110 }}>Đơn vị</th>
         <th style={{ width: 140 }}>Số lô</th><th style={{ width: 160 }}>Hạn sử dụng</th><th className="num" style={{ width: 100 }}>Quy ra</th><th style={{ width: 40 }} /></tr></thead>
       <tbody>{lines.map(l => {
         const it = l.item_id ? byId.get(l.item_id) : undefined;
-        const base = it ? Number(l.qty || 0) * (l.unit_mode === 'purchase' && it.purchase_unit ? Number(it.purchase_factor) : 1) : 0;
+        const base = it ? baseQty(l, it) : 0;
+        const pack = hasPack(it);
         const need = it?.track_lot;
         return (
           <tr key={l.key}>
             <td><ItemPicker items={active} value={l.item_id} onChange={id => set(l.key, { item_id: id, unit_mode: byId.get(id)?.purchase_unit ? 'purchase' : 'base' })} />
               {need && <div className="item-code">Bắt buộc số lô + hạn dùng</div>}</td>
-            <td className="num"><input className="input sm" type="number" min={0} step="any" style={{ width: 80, textAlign: 'right' }} value={l.qty} onChange={e => set(l.key, { qty: e.target.value })} /></td>
-            <td>{!it ? null : it.purchase_unit ? (
+            <td className="num">{pack
+              // Vật tư có quy đổi: 2 ô [hộp] [sợi], lưu thành tổng số sợi
+              ? <QtyInput value={l.qty === '' ? '' : String(base)} onChange={v => set(l.key, { qty: v, unit_mode: 'base' })} unit={it} />
+              : <input className="input sm" type="number" min={0} step="any" style={{ width: 80, textAlign: 'right' }} value={l.qty} onChange={e => set(l.key, { qty: e.target.value })} />}</td>
+            <td>{!it ? null : pack ? <span className="small muted">1 {it.purchase_unit} = {fmtQty(it.purchase_factor)} {it.unit}</span> : it.purchase_unit ? (
               <select className="select sm" value={l.unit_mode} onChange={e => set(l.key, { unit_mode: e.target.value as Line['unit_mode'] })}>
                 <option value="purchase">{it.purchase_unit}</option><option value="base">{it.unit}</option>
               </select>
@@ -73,7 +79,15 @@ function useLineCheck(lines: Line[]) {
   const byId = useMemo(() => new Map((items.data ?? []).map(i => [i.id, i])), [items.data]);
   const valid = lines.filter(l => l.item_id && Number(l.qty) > 0);
   const missingLot = valid.some(l => byId.get(l.item_id!)?.track_lot && (!l.lot_no.trim() || !l.expiry_date));
-  const payload = valid.map(l => ({ item_id: l.item_id, qty: Number(l.qty), unit_mode: l.unit_mode, lot_no: l.lot_no.trim(), expiry_date: l.expiry_date || null }));
+  const payload = valid.map(l => {
+    const it = byId.get(l.item_id!);
+    let qty = Number(l.qty), unit_mode = l.unit_mode;
+    if (hasPack(it)) { // tròn hộp thì ghi phiếu theo hộp, có lẻ thì ghi theo đơn vị nhỏ
+      const b = baseQty(l, it), f = Number(it.purchase_factor);
+      [qty, unit_mode] = b % f === 0 ? [b / f, 'purchase'] : [b, 'base'];
+    }
+    return { item_id: l.item_id, qty, unit_mode, lot_no: l.lot_no.trim(), expiry_date: l.expiry_date || null };
+  });
   return { valid, missingLot, payload };
 }
 
@@ -134,6 +148,7 @@ function ReceiptHistory({ docs, from, to, setFrom, setTo }: {
   const pg = usePaged(docs.data ?? [], [branchId, from, to]);
   const [editing, setEditing] = useState<ReceiptDoc | null>(null);
   const canEdit = has('inv_receipt_edit');
+  const U = useUnits();
   return (
     <section className="panel">
       <div className="panel-head"><h2>Lịch sử nhập kho</h2>
@@ -147,7 +162,7 @@ function ReceiptHistory({ docs, from, to, setFrom, setTo }: {
               {i === 0 && <td rowSpan={d.lines.length} className="nowrap">{fmtDate(d.receipt_date)}<div className="item-code">#{d.id}</div></td>}
               {i === 0 && <td rowSpan={d.lines.length} className="small">{d.source}{d.supplier ? <div className="item-code">{d.supplier}</div> : null}{d.note ? <div className="item-code">{d.note}</div> : null}</td>}
               <td><span className="item-name">{ln.item_name}</span> <span className="item-code">{ln.item_code}</span></td>
-              <td className="num">{fmtQty(ln.input_qty)} {ln.input_unit}</td>
+              <td className="num" title={`Ghi trên phiếu: ${fmtQty(ln.input_qty)} ${ln.input_unit}`}>{U(ln.qty, ln.item_id, ln.unit)}</td>
               <td className="num">{fmtQty(ln.qty)} {ln.unit}</td>
               <td className="mono small">{ln.lot_no || '—'}</td><td className="small">{fmtDate(ln.expiry_date)}</td>
               {i === 0 && <td rowSpan={d.lines.length} className="small">{d.created_by_name}<div className="item-code">{fmtDateTime(d.created_at)}</div>

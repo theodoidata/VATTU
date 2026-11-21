@@ -1,8 +1,8 @@
 import { useMemo, useState } from 'react';
 import { Download } from 'lucide-react';
 import { useApp } from '../lib/app-context';
-import { Badge, BranchSelect, Empty, Loading, PageHeader, StockBadge, useRpc, usePaged } from '../components/ui';
-import { STOCK_LEVEL, TRANSFER_STATUS, addDays, fmtDate, fmtDateTime, fmtQty, norm, stockLevel } from '../lib/format';
+import { Badge, BranchSelect, Empty, Loading, PageHeader, StockBadge, useRpc, usePaged, useUnits } from '../components/ui';
+import { STOCK_LEVEL, TRANSFER_STATUS, addDays, fmtDate, fmtDateTime, fmtQty, fmtUnits, norm, stockLevel } from '../lib/format';
 import type { MatrixRow, StockRow, Transfer, TransferStatus } from '../lib/types';
 import { exportExcel, sheet } from '../lib/excel';
 
@@ -37,6 +37,7 @@ function ExportBtn({ onClick, disabled }: { onClick: () => void; disabled?: bool
 function StockMatrix() {
   const { branches, groups, today } = useApp();
   const m = useRpc<MatrixRow[]>('report_stock', {});
+  const U = useUnits();
   const [q, setQ] = useState('');
   const [group, setGroup] = useState<number | ''>('');
   const [onlyAlert, setOnlyAlert] = useState(false);
@@ -73,8 +74,8 @@ function StockMatrix() {
           <thead><tr><th style={{ width: 240 }}>Vật tư</th><th style={{ width: 64 }}>ĐVT</th>{branches.map(b => <th key={b.id} className="num" style={{ width: 84, whiteSpace: 'normal' }}>{b.name}</th>)}<th className="num" style={{ width: 80 }}>Tổng</th></tr></thead>
           <tbody>{pg.shown.map(r => (
             <tr key={r.id}><td><div className="item-name">{r.name}</div><div className="item-code">{r.code} · {r.group_name}</div></td><td className="small">{r.unit}</td>
-              {branches.map(b => { const c = r.by_branch[String(b.id)]; return <td key={b.id} className={`num ${cls(c)}`} title={c ? `Còn dùng được ${fmtQty(c.usable)} · tối thiểu ${fmtQty(c.min)}` : ''}>{fmtQty(c?.qty)}</td>; })}
-              <td className="num"><b>{fmtQty(branches.reduce((s, b) => s + Number(r.by_branch[String(b.id)]?.qty ?? 0), 0))}</b></td></tr>
+              {branches.map(b => { const c = r.by_branch[String(b.id)]; return <td key={b.id} className={`num ${cls(c)}`} title={c ? `Còn dùng được ${U(c.usable, r.id, r.unit)} · tối thiểu ${U(c.min, r.id, r.unit)}` : ''}>{U(c?.qty, r.id, r.unit, { bare: true })}</td>; })}
+              <td className="num"><b>{U(branches.reduce((s, b) => s + Number(r.by_branch[String(b.id)]?.qty ?? 0), 0), r.id, r.unit, { bare: true })}</b></td></tr>
           ))}</tbody>
         </table></div>{pg.pager}</>
       )}
@@ -99,7 +100,7 @@ function OwnStock() {
       {s.loading ? <Loading /> : s.error ? <div className="notice danger">{s.error}</div> : (
         <><div className="table-wrap"><table className="data fixed-cols">
           <thead><tr><th>Vật tư</th><th className="num" style={{ width: 110 }}>Tồn</th><th className="num" style={{ width: 130 }}>Còn dùng được</th><th className="num" style={{ width: 100 }}>Tối thiểu</th><th style={{ width: 130 }}>Trạng thái</th></tr></thead>
-          <tbody>{pgO.shown.map(r => <tr key={r.id}><td><span className="item-name">{r.name}</span> <span className="item-code">{r.code}</span></td><td className="num">{fmtQty(r.qty)} {r.unit}</td><td className="num">{fmtQty(r.usable_qty)}</td><td className="num">{fmtQty(r.min_qty)}</td><td><StockBadge usable={r.usable_qty} min={r.min_qty} /></td></tr>)}</tbody>
+          <tbody>{pgO.shown.map(r => <tr key={r.id}><td><span className="item-name">{r.name}</span> <span className="item-code">{r.code}</span></td><td className="num">{fmtUnits(r.qty, r)}</td><td className="num">{fmtUnits(r.usable_qty, r, { bare: true })}</td><td className="num">{fmtUnits(r.min_qty, r, { bare: true })}</td><td><StockBadge usable={r.usable_qty} min={r.min_qty} /></td></tr>)}</tbody>
         </table></div>{pgO.pager}</>
       )}
     </>
@@ -119,6 +120,7 @@ function TransferReport() {
   const r = useRange();
   const [branch, setBranch] = useState<number | null>(null);
   const [status, setStatus] = useState<TransferStatus | ''>('');
+  const U = useUnits();
   const t = useRpc<Transfer[]>('report_transfers', { from: r.from, to: r.to, branch_id: branch });
   const rows = (t.data ?? []).filter(x => !status || x.status === status);
   const flat = rows.flatMap(x => x.lines.map(l => ({ t: x, l })));
@@ -152,7 +154,7 @@ function TransferReport() {
             <tr key={l.id}><td className="nowrap"><b className="mono">{x.code}</b><div className="item-code">{fmtDateTime(x.requested_at)}</div></td>
               <td className="small nowrap">{x.to_branch_name} ← {x.from_branch_name}</td>
               <td><span className="item-name">{l.item_name}</span></td>
-              <td className="num">{fmtQty(l.qty_requested)} {l.unit}</td><td className="num">{l.qty_approved == null ? '—' : fmtQty(l.qty_approved)}</td>
+              <td className="num">{U(l.qty_requested, l.item_id, l.unit)}</td><td className="num">{l.qty_approved == null ? '—' : U(l.qty_approved, l.item_id, l.unit, { bare: true })}</td>
               <td><Badge tone={TRANSFER_STATUS[x.status].tone}>{TRANSFER_STATUS[x.status].label}</Badge></td>
               <td className="small">{x.received_at ? fmtDateTime(x.received_at) : x.closed_at ? fmtDateTime(x.closed_at) : '—'}</td></tr>
           ))}</tbody>
@@ -169,6 +171,7 @@ function UsageReport() {
   const r = useRange(30);
   const [branch, setBranch] = useState<number | null>(null);
   const [view, setView] = useState<'sum' | 'detail'>('sum');
+  const U = useUnits();
   const u = useRpc<UsageRow[]>('report_usage', { from: r.from, to: r.to, branch_id: branch });
   const data = u.data ?? [];
   const sum = useMemo(() => {
@@ -211,8 +214,8 @@ function UsageReport() {
           <thead><tr><th>Vật tư</th>{shownBranches.map(b => <th key={b.id} className="num">{b.name}</th>)}<th className="num">Tổng</th><th className="num">TB/ngày</th><th className="num">Hỏng/hủy</th></tr></thead>
           <tbody>{pgS.shown.map(x => (
             <tr key={x.item_id}><td><span className="item-name">{x.item_name}</span> <span className="item-code">{x.unit}</span></td>
-              {shownBranches.map(b => <td key={b.id} className="num">{x.by[b.id] ? fmtQty(x.by[b.id]) : <span className="muted">·</span>}</td>)}
-              <td className="num"><b>{fmtQty(x.total)}</b></td><td className="num">{fmtQty(x.total / days)}</td><td className="num">{x.waste ? fmtQty(x.waste) : ''}</td></tr>
+              {shownBranches.map(b => <td key={b.id} className="num">{x.by[b.id] ? U(x.by[b.id], x.item_id, x.unit, { bare: true }) : <span className="muted">·</span>}</td>)}
+              <td className="num"><b>{U(x.total, x.item_id, x.unit, { bare: true })}</b></td><td className="num">{fmtQty(x.total / days)}</td><td className="num">{x.waste ? U(x.waste, x.item_id, x.unit, { bare: true }) : ''}</td></tr>
           ))}</tbody>
         </table></div>{pgS.pager}</>
       ) : (
@@ -220,7 +223,7 @@ function UsageReport() {
           <thead><tr><th>Ngày</th><th>Chi nhánh</th><th>Vật tư</th><th className="num">SL</th><th>Lý do</th><th>Lô</th><th>Người ghi</th></tr></thead>
           <tbody>{pgD.shown.map((x, i) => (
             <tr key={i}><td className="nowrap">{fmtDate(x.usage_date)}</td><td>{x.branch_name}</td><td><span className="item-name">{x.item_name}</span></td>
-              <td className="num">{fmtQty(x.qty)} {x.unit}</td><td><Badge tone={x.reason === 'Điều trị' ? 'muted' : 'warning'}>{x.reason}</Badge></td>
+              <td className="num">{U(x.qty, x.item_id, x.unit)}</td><td><Badge tone={x.reason === 'Điều trị' ? 'muted' : 'warning'}>{x.reason}</Badge></td>
               <td className="small mono">{x.lots.map(z => `${z.lot_no || '—'}×${fmtQty(z.qty)}`).join(', ')}</td><td className="small">{x.created_by_name}</td></tr>
           ))}</tbody>
         </table></div>{pgD.pager}</>

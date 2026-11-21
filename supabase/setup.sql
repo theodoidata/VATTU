@@ -865,6 +865,49 @@ begin
   return (select jsonb_build_object('id', id, 'name', name, 'unit', unit) from items where id = v_id);
 end $$;
 
+-- Tách đơn vị lẻ: vật tư đang tính theo 1 đơn vị (vd "hộp") → đặt 1 hộp = N đơn vị nhỏ (vd "sợi").
+-- Từ đó tồn được đếm theo đơn vị nhỏ (hiển thị gộp "1 hộp 1 sợi"), nên mọi số lượng cũ
+-- (tồn, tối thiểu, lịch sử, phiếu đang dở) được nhân N để không lệch.
+create or replace function public.set_item_conversion(p jsonb) returns jsonb
+language plpgsql security definer set search_path = public, app as $$
+declare
+  v_id    int := nullif(p->>'item_id', '')::int;
+  v_small text := nullif(trim(coalesce(p->>'small_unit', '')), '');
+  v_n     numeric := nullif(p->>'factor', '')::numeric;
+  v_item  items;
+begin
+  perform app.me();
+  perform app.require('inv_catalog_manage');
+  select * into v_item from items where id = v_id for update;
+  if not found then raise exception 'Không tìm thấy vật tư.'; end if;
+  if v_item.purchase_unit is not null and v_item.purchase_factor <> 1 then
+    raise exception 'Vật tư này đã có quy đổi (1 % = % %). Muốn sửa số quy đổi thì vào Danh mục.',
+      v_item.purchase_unit, app.fmt(v_item.purchase_factor), v_item.unit;
+  end if;
+  if v_small is null then raise exception 'Chưa nhập đơn vị nhỏ (vd: sợi, cái).'; end if;
+  if lower(v_small) = lower(v_item.unit) then raise exception 'Đơn vị nhỏ phải khác đơn vị hiện tại (%).', v_item.unit; end if;
+  if v_n is null or v_n < 2 or v_n <> trunc(v_n) or v_n > 100000 then
+    raise exception 'Số quy đổi phải là số nguyên từ 2 trở lên.';
+  end if;
+
+  update stock_lots set qty = qty * v_n where item_id = v_id;
+  update item_branch_settings set min_qty = min_qty * v_n where item_id = v_id;
+  update movements set qty_change = qty_change * v_n where item_id = v_id;
+  update receipt_lines set qty = qty * v_n where item_id = v_id;  -- input_qty/input_unit giữ nguyên (vẫn là "hộp")
+  update usage_lines set qty = qty * v_n,
+         lots = coalesce((select jsonb_agg(x || jsonb_build_object('qty', (x->>'qty')::numeric * v_n)) from jsonb_array_elements(lots) x), '[]'::jsonb)
+   where item_id = v_id;
+  update transfer_lines set qty_requested = qty_requested * v_n, qty_approved = qty_approved * v_n, qty_received = qty_received * v_n,
+         lots = coalesce((select jsonb_agg(x || jsonb_build_object('qty', (x->>'qty')::numeric * v_n)) from jsonb_array_elements(lots) x), '[]'::jsonb)
+   where item_id = v_id;
+  update stocktake_lines set system_qty = system_qty * v_n, counted_qty = counted_qty * v_n where item_id = v_id;
+  update items set purchase_unit = unit, purchase_factor = v_n, unit = v_small, default_min_qty = default_min_qty * v_n
+   where id = v_id;
+
+  return (select jsonb_build_object('id', id, 'unit', unit, 'purchase_unit', purchase_unit, 'purchase_factor', purchase_factor)
+            from items where id = v_id);
+end $$;
+
 -- Sửa phiếu nhập đã lưu (BGĐ / Kế toán). Tồn kho điều chỉnh theo CHÊNH LỆCH từng vật tư + lô:
 -- tăng thì cộng thêm, giảm thì trừ đúng lô đó (lô đã dùng / chuyển hết thì không cho giảm).
 create or replace function public.edit_receipt(p jsonb) returns jsonb

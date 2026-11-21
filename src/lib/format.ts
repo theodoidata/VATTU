@@ -79,3 +79,23 @@ export const TRANSFER_STATUS: Record<TransferStatus, { label: string; tone: stri
 export const USAGE_REASONS = ['Điều trị', 'Hỏng / rơi vỡ', 'Hủy hết hạn', 'Khác'];
 
 export const norm = (s: string) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/đ/g, 'd').replace(/Đ/g, 'D').toLowerCase();
+
+// ---- Hiển thị gộp 2 cấp đơn vị: 11 sợi (1 hộp = 10 sợi) → "1 hộp 1 sợi" ----
+export type UnitInfo = { unit: string; purchase_unit?: string | null; purchase_factor?: number | string | null };
+export const hasPack = (u?: UnitInfo | null): u is UnitInfo & { purchase_unit: string } =>
+  Boolean(u?.purchase_unit) && Number(u?.purchase_factor) > 1;
+/** Tách số lượng (đơn vị nhỏ) thành [số hộp, số lẻ] */
+export function splitPack(qty: number, factor: number): [number, number] {
+  const q = Math.abs(qty);
+  const whole = Math.floor(q / factor + 1e-9);
+  return [whole, Math.round((q - whole * factor) * 100) / 100];
+}
+/** opts.bare: vật tư 1 đơn vị thì chỉ hiện số (dùng trong bảng đã có cột ĐVT) */
+export function fmtUnits(qty: number | string | null | undefined, u?: UnitInfo | null, opts: { sign?: boolean; bare?: boolean } = {}) {
+  const n = Number(qty ?? 0);
+  const sign = n < 0 ? '−' : opts.sign && n > 0 ? '+' : '';
+  if (!u || (opts.bare && (!hasPack(u) || n === 0))) return sign + fmtQty(Math.abs(n));
+  if (!hasPack(u) || Math.abs(n) < Number(u.purchase_factor)) return `${sign}${fmtQty(Math.abs(n))} ${u.unit}`;
+  const [w, r] = splitPack(n, Number(u.purchase_factor));
+  return `${sign}${fmtQty(w)} ${u.purchase_unit}${r ? ` ${fmtQty(r)} ${u.unit}` : ''}`;
+}

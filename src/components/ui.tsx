@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { X, Loader2, ChevronLeft, ChevronRight } from 'lucide-react';
 import { useApp } from '../lib/app-context';
-import { EXPIRY_LEVEL, STOCK_LEVEL, expiryLevel, fmtDate, norm, stockLevel } from '../lib/format';
+import { EXPIRY_LEVEL, STOCK_LEVEL, expiryLevel, fmtDate, fmtQty, fmtUnits, hasPack, norm, splitPack, stockLevel, type UnitInfo } from '../lib/format';
+import type { Item } from '../lib/types';
 
 export function PageHeader({ title, description, actions }: { title: string; description?: ReactNode; actions?: ReactNode }) {
   return (
@@ -73,7 +74,7 @@ export function Loading() { return <div className="empty"><Loader2 className="sp
 /* Danh mục vật tư (811 dòng) ít khi đổi → nhớ trong phiên để khỏi tải lại mỗi lần mở trang (đỡ tốn dữ liệu).
    Chỉ xóa bộ nhớ khi có thao tác sửa danh mục / mức tối thiểu, hoặc khi đổi người dùng. */
 const CACHED_FNS = new Set(['list_items']);
-const CATALOG_WRITES = new Set(['save_item', 'save_min_qty', 'update_item_basic']);
+const CATALOG_WRITES = new Set(['save_item', 'save_min_qty', 'update_item_basic', 'set_item_conversion']);
 const rpcCache = new Map<string, Promise<unknown>>();
 export const clearRpcCache = () => rpcCache.clear();
 
@@ -336,18 +337,81 @@ export function Chips<V extends string>({ value, options, onChange }: { value: V
 /* ---------------- Đơn vị tính ---------------- */
 export const UNIT_OPTIONS = ['cái', 'hộp', 'gói', 'sợi', 'vỉ', 'tuýp', 'lọ', 'chai', 'bộ', 'cuộn', 'ống', 'miếng', 'túi', 'cây', 'tấm', 'viên', 'đôi', 'bịch', 'can', 'thùng', 'ml', 'g', 'kg'];
 
-/** Ô đơn vị: chọn nhanh trong danh sách hoặc gõ đơn vị khác. Gọi onCommit khi rời ô / Enter nếu có thay đổi. */
+/** Ô đơn vị: chọn trong danh sách (luôn hiện đủ) hoặc "Khác…" để gõ đơn vị mới. Gọi onCommit khi đổi. */
 export function UnitInput({ value, onCommit, disabled, width = 84 }: { value: string; onCommit: (v: string) => void; disabled?: boolean; width?: number }) {
-  const [v, setV] = useState(value);
-  const sent = useRef(value); // tránh gửi 2 lần (Enter rồi rời ô)
-  useEffect(() => { setV(value); sent.current = value; }, [value]);
-  const commit = () => { const t = v.trim(); if (!t) { setV(value); return; } if (t !== value && t !== sent.current) { sent.current = t; onCommit(t); } };
-  return (<>
-    <input className="input sm" list="unit-options" style={{ width }} value={v} disabled={disabled}
-      title="Đổi đơn vị tính của vật tư (áp dụng cho cả danh mục)"
-      onChange={e => setV(e.target.value)} onBlur={commit} onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); commit(); } if (e.key === 'Escape') setV(value); }} />
-    <datalist id="unit-options">{UNIT_OPTIONS.map(u => <option key={u} value={u} />)}</datalist>
-  </>);
+  const [typing, setTyping] = useState(false);
+  const [v, setV] = useState('');
+  const sent = useRef(false);
+  const opts = UNIT_OPTIONS.includes(value) ? UNIT_OPTIONS : [value, ...UNIT_OPTIONS];
+  const commit = () => { if (sent.current) return; sent.current = true; const t = v.trim(); setTyping(false); if (t && t !== value) onCommit(t); };
+  if (typing) return (
+    <input className="input sm" style={{ width }} value={v} autoFocus placeholder="gõ đơn vị" disabled={disabled}
+      onChange={e => setV(e.target.value)} onBlur={commit}
+      onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); commit(); } if (e.key === 'Escape') { sent.current = true; setTyping(false); } }} />);
+  return (
+    <select className="select sm" style={{ width }} value={value} disabled={disabled} title="Đổi đơn vị tính của vật tư (áp dụng cho cả danh mục)"
+      onChange={e => { const t = e.target.value; if (t === '__other') { sent.current = false; setV(''); setTyping(true); } else if (t !== value) onCommit(t); }}>
+      {opts.map(u => <option key={u} value={u}>{u}</option>)}
+      <option value="__other">Khác…</option>
+    </select>);
+}
+
+/** Đơn vị 2 cấp của từng vật tư (lấy từ danh mục đã nhớ trong phiên) → định dạng "1 hộp 1 sợi" */
+function useUnitMap() {
+  const items = useRpc<Item[]>('list_items');
+  return useMemo(() => new Map((items.data ?? []).map(i => [i.id, i as UnitInfo])), [items.data]);
+}
+export function useUnits() {
+  const map = useUnitMap();
+  return useCallback((qty: number | string | null | undefined, item: number | UnitInfo | null | undefined, fallbackUnit?: string, opts?: { sign?: boolean; bare?: boolean }) => {
+    const fb = fallbackUnit ? { unit: fallbackUnit } : null;
+    const u = typeof item === 'number' ? map.get(item) ?? fb : item ?? fb;
+    return fmtUnits(qty, u, opts);
+  }, [map]);
+}
+
+/** Ô số lượng theo vật tư (tự tra quy đổi trong danh mục): 2 ô hộp/sợi hoặc 1 ô + tên đơn vị */
+export function ItemQtyInput({ itemId, unit, value, onChange, bad, max }: { itemId: number | null | undefined; unit?: string; value: string; onChange: (v: string) => void; bad?: boolean; max?: number }) {
+  const map = useUnitMap();
+  const u = itemId ? map.get(itemId) ?? (unit ? { unit } : null) : null;
+  if (hasPack(u)) return <QtyInput value={value} onChange={onChange} unit={u} bad={bad} max={max} />;
+  return <div className="qty-cell"><input className="input sm" type="number" min={0} max={max} step="any" value={value} onChange={e => onChange(e.target.value)}
+    style={bad ? { borderColor: 'var(--td-danger)' } : undefined} /><span className="muted small">{u?.unit ?? unit ?? ''}</span></div>;
+}
+
+/** Ô số lượng: vật tư có quy đổi thì hiện 2 ô [__] hộp [__] sợi, giá trị luôn là tổng theo đơn vị nhỏ. */
+export function QtyInput({ value, onChange, unit, placeholder, disabled, max, width = 72, autoFocus, bad }: {
+  value: string; onChange: (v: string) => void; unit?: UnitInfo | null; placeholder?: string; disabled?: boolean; max?: number; width?: number; autoFocus?: boolean; bad?: boolean;
+}) {
+  const st = bad ? { borderColor: 'var(--td-danger)' } : undefined;
+  const pack = hasPack(unit);
+  const f = pack ? Number(unit.purchase_factor) : 1;
+  const split = (v: string): [string, string] => {
+    if (v === '' || !pack) return ['', v];
+    const [w, r] = splitPack(Number(v), f);
+    return [w ? String(w) : '', r ? String(r) : (w ? '' : '0')];
+  };
+  const [parts, setParts] = useState<[string, string]>(() => split(value));
+  const last = useRef(value);
+  useEffect(() => { if (value !== last.current) { last.current = value; setParts(split(value)); } }, [value, f]); // eslint-disable-line react-hooks/exhaustive-deps
+  if (!pack) return (
+    <input className="input sm num" type="number" min={0} max={max} step="any" style={{ width, ...st }} value={value} placeholder={placeholder}
+      disabled={disabled} autoFocus={autoFocus} onChange={e => { last.current = e.target.value; onChange(e.target.value); }} />);
+  const emit = (p: [string, string]) => {
+    setParts(p);
+    const v = p[0] === '' && p[1] === '' ? '' : String(Math.round((Number(p[0] || 0) * f + Number(p[1] || 0)) * 100) / 100);
+    last.current = v; onChange(v);
+  };
+  return (
+    <span className="qty-pack" title={`1 ${unit.purchase_unit} = ${fmtQty(f)} ${unit.unit} — điền ô nào cũng được, tự cộng lại`}>
+      <input className="input sm num" type="number" min={0} step={1} value={parts[0]} disabled={disabled} autoFocus={autoFocus} style={st}
+        placeholder={placeholder ? '0' : ''} onChange={e => emit([e.target.value, parts[1]])} />
+      <span className="qp-u">{unit.purchase_unit}</span>
+      <input className="input sm num" type="number" min={0} step="any" value={parts[1]} disabled={disabled} style={st}
+        placeholder={placeholder ? '0' : ''} onChange={e => emit([parts[0], e.target.value])}
+        onBlur={() => { if (Number(parts[1]) >= f) setParts(split(last.current)); }} />
+      <span className="qp-u">{unit.unit}</span>
+    </span>);
 }
 
 /* ---------------- Lưu tạm phiếu đang nhập dở (chỉ trên máy này) ---------------- */

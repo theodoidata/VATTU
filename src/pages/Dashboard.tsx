@@ -2,7 +2,7 @@ import { useMemo } from 'react';
 import { AlertTriangle, CalendarClock, ArrowRightLeft, PackageMinus, ArrowRight } from 'lucide-react';
 import { useApp } from '../lib/app-context';
 import { Badge, Empty, ExpiryBadge, Kpi, Loading, PageHeader, StockBadge, useRpc } from '../components/ui';
-import { TRANSFER_STATUS, daysBetween, fmtDateTime, fmtQty, stockLevel } from '../lib/format';
+import { TRANSFER_STATUS, daysBetween, fmtDateTime, fmtUnits, stockLevel } from '../lib/format';
 import type { StockRow, Transfer, UsageDoc } from '../lib/types';
 import { handoff } from '../lib/handoff';
 import { transferNeedsMe } from './Transfers';
@@ -61,7 +61,7 @@ export default function Dashboard() {
               <thead><tr><th>Vật tư</th><th className="num">Còn dùng được</th><th className="num">Tối thiểu</th><th>Trạng thái</th></tr></thead>
               <tbody>{s.short.slice(0, 12).map(r => (
                 <tr key={r.id}><td><div className="item-name">{r.name}</div><div className="item-code">{r.code} · {r.group_name}</div></td>
-                  <td className="num">{fmtQty(r.usable_qty)} {r.unit}</td><td className="num">{fmtQty(r.min_qty)}</td>
+                  <td className="num">{fmtUnits(r.usable_qty, r)}</td><td className="num">{fmtUnits(r.min_qty, r)}</td>
                   <td><StockBadge usable={r.usable_qty} min={r.min_qty} /></td></tr>
               ))}</tbody>
             </table></div>
@@ -90,7 +90,7 @@ export default function Dashboard() {
                 <thead><tr><th>Vật tư</th><th>Lô</th><th className="num">SL</th><th>Hạn dùng</th></tr></thead>
                 <tbody>{s.lots.slice(0, 10).map(l => (
                   <tr key={l.id}><td className="item-name">{l.item.name}</td><td className="mono">{l.lot_no || '—'}</td>
-                    <td className="num">{fmtQty(l.qty)} {l.item.unit}</td><td><ExpiryBadge date={l.expiry_date} /></td></tr>
+                    <td className="num">{fmtUnits(l.qty, l.item)}</td><td><ExpiryBadge date={l.expiry_date} /></td></tr>
                 ))}</tbody>
               </table></div>
             )}

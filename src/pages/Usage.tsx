@@ -1,8 +1,8 @@
 import { useMemo, useState } from 'react';
 import { Plus, Trash2, Save, Ban, Clock, X } from 'lucide-react';
 import { useApp } from '../lib/app-context';
-import { Badge, Empty, Field, ItemPicker, Loading, PageHeader, ReasonModal, readDraft, useAction, useFormDraft, useRpc, usePaged } from '../components/ui';
-import { USAGE_REASONS, addDays, fmtDate, fmtDateTime, fmtQty } from '../lib/format';
+import { Badge, Empty, Field, ItemPicker, Loading, PageHeader, QtyInput, ReasonModal, readDraft, useAction, useFormDraft, useRpc, usePaged, useUnits } from '../components/ui';
+import { USAGE_REASONS, addDays, fmtDate, fmtDateTime, fmtUnits } from '../lib/format';
 import type { StockRow, UsageDoc } from '../lib/types';
 
 type Line = { key: number; item_id: number | null; qty: string; reason: string; lot_id: number | null };
@@ -30,10 +30,11 @@ export default function UsagePage() {
   const { run, busy } = useAction();
   const pg = usePaged(docs.data ?? [], [branchId, from, to]);
 
+  const U = useUnits();
   const byId = useMemo(() => new Map((stock.data ?? []).map(r => [r.id, r])), [stock.data]);
   const pickItems = useMemo(() => (stock.data ?? []).map(r => ({
     id: r.id, code: r.code, name: r.name, unit: r.unit, group_name: r.group_name,
-    extra: <span className={Number(r.usable_qty) > 0 ? '' : 'muted'}>còn {fmtQty(r.usable_qty)} {r.unit}</span>,
+    extra: <span className={Number(r.usable_qty) > 0 ? '' : 'muted'}>còn {fmtUnits(r.usable_qty, r)}</span>,
   })), [stock.data]);
 
   const set = (key: number, patch: Partial<Line>) => setLines(ls => ls.map(l => (l.key === key ? { ...l, ...patch } : l)));
@@ -64,7 +65,7 @@ export default function UsagePage() {
             <Field label="Ghi chú (không bắt buộc)"><input className="input" value={note} onChange={e => setNote(e.target.value)} placeholder="VD: ca chiều, ghế 2…" /></Field>
           </div>
           <div className="table-wrap stack-sm"><table className="data lines-table">
-            <thead><tr><th style={{ minWidth: 260 }}>Vật tư</th><th style={{ width: 110 }}>Số lượng</th><th style={{ width: 160 }}>Lý do</th><th style={{ minWidth: 170 }}>Lô</th><th style={{ width: 40 }} /></tr></thead>
+            <thead><tr><th style={{ minWidth: 260 }}>Vật tư</th><th style={{ width: 120 }}>Số lượng</th><th style={{ width: 160 }}>Lý do</th><th style={{ minWidth: 170 }}>Lô</th><th style={{ width: 40 }} /></tr></thead>
             <tbody>{lines.map(l => {
               const r = l.item_id ? byId.get(l.item_id) : undefined;
               const expiredMode = l.reason === 'Hủy hết hạn';
@@ -74,14 +75,14 @@ export default function UsagePage() {
                 <tr key={l.key}>
                   <td><ItemPicker items={pickItems} value={l.item_id} onChange={id => set(l.key, { item_id: id, lot_id: null })}
                     exclude={lines.filter(x => x.key !== l.key && x.reason === l.reason).map(x => x.item_id!).filter(Boolean)} />
-                    {over && <div className="small" style={{ color: 'var(--td-danger)' }}>Vượt tồn còn dùng được ({fmtQty(expiredMode ? r!.qty : r!.usable_qty)})</div>}</td>
-                  <td><div className="row" style={{ flexWrap: 'nowrap', gap: 4 }}><input className="input sm" type="number" min={0} step="any" style={{ width: 70 }} value={l.qty} onChange={e => set(l.key, { qty: e.target.value })} /><span className="muted small">{r?.unit}</span></div></td>
+                    {over && <div className="small" style={{ color: 'var(--td-danger)' }}>Vượt tồn còn dùng được ({fmtUnits(expiredMode ? r!.qty : r!.usable_qty, r)})</div>}</td>
+                  <td><div className="row" style={{ flexWrap: 'nowrap', gap: 4 }}><QtyInput value={l.qty} onChange={v => set(l.key, { qty: v })} unit={r} width={70} />{!(r?.purchase_unit && Number(r.purchase_factor) > 1) && <span className="muted small">{r?.unit}</span>}</div></td>
                   <td><select className="select sm" value={l.reason} onChange={e => set(l.key, { reason: e.target.value, lot_id: null })}>{USAGE_REASONS.map(x => <option key={x}>{x}</option>)}</select></td>
                   <td>{r && r.lots.length > 0 ? (
                     <select className="select sm" value={l.lot_id ?? ''} onChange={e => set(l.key, { lot_id: e.target.value ? Number(e.target.value) : null })} style={{ width: '100%' }}>
                       {!expiredMode && <option value="">Tự động (hết hạn trước)</option>}
                       {expiredMode && <option value="">— chọn lô —</option>}
-                      {lots.map(x => <option key={x.id} value={x.id}>{x.lot_no || 'không số lô'} · HSD {fmtDate(x.expiry_date)} · còn {fmtQty(x.qty)}</option>)}
+                      {lots.map(x => <option key={x.id} value={x.id}>{x.lot_no || 'không số lô'} · HSD {fmtDate(x.expiry_date)} · còn {fmtUnits(x.qty, r)}</option>)}
                     </select>) : <span className="muted small">{r ? 'Hết hàng' : ''}</span>}</td>
                   <td><button className="btn btn-ghost btn-sm icon-only" onClick={() => setLines(ls => ls.length > 1 ? ls.filter(x => x.key !== l.key) : [newLine()])} aria-label="Xóa dòng"><Trash2 size={15} /></button></td>
                 </tr>
@@ -109,9 +110,9 @@ export default function UsagePage() {
               <tr key={ln.id} style={d.voided_at ? { opacity: .5, textDecoration: 'line-through' } : undefined}>
                 {i === 0 && <td rowSpan={d.lines.length} className="nowrap">{fmtDate(d.usage_date)}<div className="item-code">#{d.id}{d.note ? ' · ' + d.note : ''}</div></td>}
                 <td><span className="item-name">{ln.item_name}</span> <span className="item-code">{ln.item_code}</span></td>
-                <td className="num">{fmtQty(ln.qty)} {ln.unit}</td>
+                <td className="num">{U(ln.qty, ln.item_id, ln.unit)}</td>
                 <td><Badge tone={ln.reason === 'Điều trị' ? 'muted' : 'warning'}>{ln.reason}</Badge></td>
-                <td className="small mono">{ln.lots.map(x => `${x.lot_no || '—'}×${fmtQty(x.qty)}`).join(', ')}</td>
+                <td className="small mono">{ln.lots.map(x => `${x.lot_no || '—'}×${U(x.qty, ln.item_id, ln.unit)}`).join(', ')}</td>
                 {i === 0 && <td rowSpan={d.lines.length} className="small">{d.created_by_name}<div className="item-code">{fmtDateTime(d.created_at)}</div>
                   {d.voided_at && <div style={{ textDecoration: 'none' }}><Badge tone="danger">Đã hủy: {d.void_reason}</Badge></div>}</td>}
                 {i === 0 && <td rowSpan={d.lines.length}>{!d.voided_at && has('inv_usage_void') && canAct(d.branch_id) && (d.created_date === today || has('inv_all_branches')) &&

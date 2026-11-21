@@ -133,6 +133,28 @@ await ok('Đổi tên / đơn vị vật tư (BGĐ)', async () => {
 await err('Kho không được đổi tên vật tư', async () => call(U(3), 'update_item_basic', { id: await item('TT-LIDO'), name: 'x' }), 'quyền');
 await err('Không cho tên rỗng', async () => call(U(1), 'update_item_basic', { id: await item('TT-LIDO'), name: '  ' }), 'không được để trống');
 
+await ok('Tách đơn vị lẻ: 1 gói = 10 miếng, tồn/tối thiểu/lịch sử nhân 10', async () => {
+  const id = await item('TH-BONG');
+  const q = async () => Number((await db.query('select coalesce(sum(qty),0) q from stock_lots where branch_id=5 and item_id=$1', [id])).rows[0].q);
+  await call(U(2), 'record_receipt', { branch_id: 5, lines: [{ item_id: id, qty: 4, unit_mode: 'base' }] });
+  const before = await q();
+  const mins0 = Number((await db.query('select default_min_qty m from items where id=$1', [id])).rows[0].m);
+  assert(await throws(() => call(U(3), 'set_item_conversion', { item_id: id, small_unit: 'miếng', factor: 10 })), 'kho không được tách');
+  const r = await call(U(1), 'set_item_conversion', { item_id: id, small_unit: 'miếng', factor: 10 });
+  assert(r.unit === 'miếng' && r.purchase_unit === 'gói' && Number(r.purchase_factor) === 10, 'quy đổi sai');
+  assert(await q() === before * 10, `tồn ${before} phải thành ${before * 10}, đang ${await q()}`);
+  assert(Number((await db.query('select default_min_qty m from items where id=$1', [id])).rows[0].m) === mins0 * 10, 'tối thiểu chưa nhân');
+  const ln = (await db.query('select qty, input_qty, input_unit from receipt_lines where item_id=$1 order by id desc limit 1', [id])).rows[0];
+  assert(Number(ln.qty) === 40 && Number(ln.input_qty) === 4 && ln.input_unit === 'gói', 'phiếu nhập cũ: ' + JSON.stringify(ln));
+  const mv = Number((await db.query('select coalesce(sum(qty_change),0) s from movements where branch_id=5 and item_id=$1', [id])).rows[0].s);
+  assert(mv === await q(), `sổ kho ${mv} phải khớp tồn`);
+  assert(await throws(() => call(U(1), 'set_item_conversion', { item_id: id, small_unit: 'sợi', factor: 5 })), 'tách lần 2 phải báo');
+  // nhập 1 gói (đơn vị nhập) → cộng 10 miếng
+  await call(U(2), 'record_receipt', { branch_id: 5, lines: [{ item_id: id, qty: 1, unit_mode: 'purchase' }] });
+  assert(await q() === before * 10 + 10, 'nhập 1 gói phải cộng 10 miếng');
+});
+await err('Số quy đổi phải nguyên ≥ 2', async () => call(U(1), 'set_item_conversion', { item_id: await item('TH-GAC'), small_unit: 'x', factor: 1.5 }), 'đã có quy đổi');
+
 await ok('Sửa phiếu nhập: tăng / giảm / bỏ dòng, tồn điều chỉnh theo chênh lệch', async () => {
   const a = await item('TT-LIDO'), b = await item('TT-MEPI');
   const r = await call(U(2), 'record_receipt', { branch_id: 5, supplier: 'NCC A', lines: [

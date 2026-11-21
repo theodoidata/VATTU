@@ -347,3 +347,8 @@ table.data.fixed-cols { table-layout: fixed; min-width: 820px; }
 table.data.fixed-cols td { overflow: hidden; text-overflow: ellipsis; }
 table.data.fixed-cols td .item-name { white-space: normal; }
 table.data.fixed-cols th { white-space: normal; line-height: 1.25; }
+
+/* Ô số lượng 2 cấp: [__] hộp [__] sợi */
+.qty-pack { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
+.qty-pack .input { width: 52px; padding-left: 6px; padding-right: 6px; }
+.qty-pack .qp-u { font-size: 12px; color: var(--td-text-muted); min-width: 22px; }

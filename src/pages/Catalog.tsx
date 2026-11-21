@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import { Plus, Download } from 'lucide-react';
 import { useApp } from '../lib/app-context';
 import { Badge, Chips, Empty, Field, FilterBlock, FilterPanel, GroupList, Loading, Modal, PageHeader, useAction, useRpc, usePaged } from '../components/ui';
-import { fmtQty, norm } from '../lib/format';
+import { fmtQty, fmtUnits, norm } from '../lib/format';
 import type { Item } from '../lib/types';
 import { exportExcel, sheet } from '../lib/excel';
 
@@ -65,7 +65,7 @@ export default function CatalogPage() {
                 <td className="small">{i.group_name}</td><td>{i.unit}</td>
                 <td className="small">{i.purchase_unit ? `${i.purchase_unit} = ${fmtQty(i.purchase_factor)} ${i.unit}` : '—'}</td>
                 <td>{i.track_lot ? <Badge tone="primary">Bắt buộc</Badge> : <span className="muted small">Không</span>}</td>
-                <td className="num">{fmtQty(i.default_min_qty)}</td>
+                <td className="num">{fmtUnits(i.default_min_qty, i, { bare: true })}</td>
                 <td className="small">{Object.keys(i.mins).length ? `${Object.keys(i.mins).length} chi nhánh` : '—'}</td>
               </tr>
             ))}</tbody>

@@ -1,8 +1,8 @@
 import { useMemo, useState } from 'react';
 import { Plus, ArrowLeft, Save, Send, CheckCheck, Undo2, Download, Trash2 } from 'lucide-react';
 import { useApp } from '../lib/app-context';
-import { Badge, Empty, Field, ItemPicker, Loading, Modal, PageHeader, useAction, useRpc, usePaged } from '../components/ui';
-import { fmtDate, fmtDateTime, fmtQty, norm } from '../lib/format';
+import { Badge, Empty, Field, ItemPicker, Loading, Modal, PageHeader, QtyInput, useAction, useRpc, usePaged, useUnits } from '../components/ui';
+import { fmtDate, fmtDateTime, hasPack, norm } from '../lib/format';
 import type { Item, Stocktake } from '../lib/types';
 import { exportExcel, sheet } from '../lib/excel';
 
@@ -73,6 +73,14 @@ function StocktakeDetail({ id, onBack }: { id: number; onBack: () => void }) {
   const { has, canAct, today } = useApp();
   const st = useRpc<Stocktake>('get_stocktake', { id });
   const items = useRpc<Item[]>('list_items');
+  const U = useUnits();
+  const byId = useMemo(() => new Map((items.data ?? []).map(i => [i.id, i])), [items.data]);
+  // Vật tư có quy đổi (1 hộp = 10 sợi): 2 ô [hộp] [sợi], tự cộng thành số sợi
+  const qtyBox = (itemId: number | null, unit: string, value: string, onChange: (v: string) => void) => {
+    const it = itemId ? byId.get(itemId) : undefined;
+    return hasPack(it) ? <QtyInput value={value} onChange={onChange} unit={it} />
+      : <div className="qty-cell"><input className="input sm" type="number" min={0} step="any" value={value} onChange={e => onChange(e.target.value)} /><span className="muted small">{it?.unit ?? unit}</span></div>;
+  };
   const [counts, setCounts] = useState<Record<number, string>>({});
   const [notes, setNotes] = useState<Record<number, string>>({});
   const [extra, setExtra] = useState<NewLine[]>([]);
@@ -140,7 +148,7 @@ function StocktakeDetail({ id, onBack }: { id: number; onBack: () => void }) {
         </div>
         {editable && !showSys && <p className="muted small" style={{ marginTop: 0 }}>Đang ẩn số sổ sách để đếm khách quan. Không còn hàng thì nhập 0.</p>}
         <><div className="table-wrap"><table className="data lines-table">
-          <thead><tr><th>Vật tư</th><th style={{ width: 120 }}>Số lô</th><th style={{ width: 110 }}>Hạn dùng</th>{showSystem && <th className="num" style={{ width: 90 }}>Sổ sách</th>}<th className="num" style={{ width: 150 }}>Thực đếm</th>{showSystem && <th className="num" style={{ width: 70 }}>Lệch</th>}<th style={{ width: '28%' }}>Ghi chú</th></tr></thead>
+          <thead><tr><th>Vật tư</th><th style={{ width: 120 }}>Số lô</th><th style={{ width: 110 }}>Hạn dùng</th>{showSystem && <th className="num" style={{ width: 90 }}>Sổ sách</th>}<th className="num" style={{ width: 190 }}>Thực đếm</th>{showSystem && <th className="num" style={{ width: 90 }}>Lệch</th>}<th style={{ width: '22%' }}>Ghi chú</th></tr></thead>
           <tbody>{pgL.shown.map(l => {
             const v = val(l); const d = v === '' ? null : Number(v) - Number(l.system_qty);
             return (
@@ -148,11 +156,11 @@ function StocktakeDetail({ id, onBack }: { id: number; onBack: () => void }) {
                 <td><span className="item-name">{l.item_name}</span> <span className="item-code">{l.item_code}</span></td>
                 <td className="mono small">{l.lot_no || '—'}</td>
                 <td className="small" style={{ color: l.expiry_date && l.expiry_date < today ? 'var(--td-danger)' : undefined }}>{fmtDate(l.expiry_date)}</td>
-                {showSystem && <td className="num">{fmtQty(l.system_qty)}</td>}
+                {showSystem && <td className="num">{U(l.system_qty, l.item_id, l.unit)}</td>}
                 <td className="num">{editable
-                  ? <div className="qty-cell"><input className="input sm" type="number" min={0} step="any" value={v} onChange={e => setCounts(c => ({ ...c, [l.id]: e.target.value }))} /><span className="muted small">{l.unit}</span></div>
-                  : v === '' ? '—' : `${fmtQty(v)} ${l.unit}`}</td>
-                {showSystem && <td className="num">{d == null ? '' : d === 0 ? <span className="muted">0</span> : <b style={{ color: d < 0 ? 'var(--td-danger)' : 'var(--td-success)' }}>{d > 0 ? '+' : ''}{fmtQty(d)}</b>}</td>}
+                  ? qtyBox(l.item_id, l.unit, v, nv => setCounts(c => ({ ...c, [l.id]: nv })))
+                  : v === '' ? '—' : U(v, l.item_id, l.unit)}</td>
+                {showSystem && <td className="num">{d == null ? '' : d === 0 ? <span className="muted">0</span> : <b style={{ color: d < 0 ? 'var(--td-danger)' : 'var(--td-success)' }}>{U(d, l.item_id, l.unit, { sign: true })}</b>}</td>}
                 <td>{editable ? <input className="input sm" style={{ width: '100%' }} value={notes[l.id] ?? l.note ?? ''} onChange={e => setNotes(n => ({ ...n, [l.id]: e.target.value }))} /> : <span className="small">{l.note}</span>}</td>
               </tr>
             );
@@ -163,7 +171,7 @@ function StocktakeDetail({ id, onBack }: { id: number; onBack: () => void }) {
               <td><input className="input sm" style={{ width: 100 }} value={x.lot_no} placeholder="Số lô" onChange={e => setExtra(es => es.map(y => y.key === x.key ? { ...y, lot_no: e.target.value } : y))} /></td>
               <td><input className="input sm" type="date" value={x.expiry_date} onChange={e => setExtra(es => es.map(y => y.key === x.key ? { ...y, expiry_date: e.target.value } : y))} /></td>
               {showSystem && <td className="num muted">mới</td>}
-              <td className="num"><div className="qty-cell"><input className="input sm" type="number" min={0} step="any" value={x.counted_qty} onChange={e => setExtra(es => es.map(y => y.key === x.key ? { ...y, counted_qty: e.target.value } : y))} /><span className="muted small">{items.data?.find(i => i.id === x.item_id)?.unit ?? ''}</span></div></td>
+              <td className="num">{qtyBox(x.item_id, '', x.counted_qty, nv => setExtra(es => es.map(y => y.key === x.key ? { ...y, counted_qty: nv } : y)))}</td>
               {showSystem && <td />}
               <td><button className="btn btn-ghost btn-sm icon-only" onClick={() => setExtra(es => es.filter(y => y.key !== x.key))} aria-label="Xóa dòng"><Trash2 size={14} /></button></td>
             </tr>

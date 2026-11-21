@@ -1,8 +1,8 @@
 import { useMemo, useState } from 'react';
-import { ArrowRightLeft, Check, Download, Pencil, X } from 'lucide-react';
+import { ArrowRightLeft, Check, Download, Package, Pencil, X } from 'lucide-react';
 import { useApp } from '../lib/app-context';
-import { Chips, Empty, ExpiryBadge, Field, FilterBlock, FilterPanel, GroupList, Loading, Modal, PageHeader, StockBadge, UnitInput, useAction, useRpc, usePaged } from '../components/ui';
-import { EXPIRY_LEVEL, STOCK_LEVEL, fmtDate, fmtQty, norm, rowAlerts } from '../lib/format';
+import { Chips, Empty, ExpiryBadge, Field, FilterBlock, FilterPanel, GroupList, Loading, Modal, PageHeader, QtyInput, StockBadge, UnitInput, UNIT_OPTIONS, useAction, useRpc, usePaged } from '../components/ui';
+import { EXPIRY_LEVEL, STOCK_LEVEL, fmtDate, fmtQty, fmtUnits, hasPack, norm, rowAlerts } from '../lib/format';
 import type { Lot, StockRow } from '../lib/types';
 import { handoff } from '../lib/handoff';
 import { exportExcel, sheet } from '../lib/excel';
@@ -122,16 +122,16 @@ export default function StockPage() {
           </div>
           {loading ? <Loading /> : error ? <div className="notice danger">{error}</div> : rows.length === 0 ? <Empty>{showAll ? 'Không có vật tư phù hợp.' : 'Không có vật tư phù hợp. Vật tư chưa có tồn đang được ẩn, tick “Hiện cả vật tư không có tồn” để xem.'}</Empty> : (
             <><div className="table-wrap"><table className="data fixed-cols">
-              <thead><tr><th style={{ width: 84 }}>Mã</th><th>Tên vật tư</th><th className="hide-sm" style={{ width: 130 }}>Nhóm</th><th className="num" style={{ width: 80 }}>Tồn</th><th className="num" style={{ width: 104 }}>Còn dùng được</th><th className="num" style={{ width: 96 }}>Tối thiểu</th><th style={{ width: 104 }}>Trạng thái</th><th style={{ width: 112 }}>Hạn gần nhất</th></tr></thead>
+              <thead><tr><th style={{ width: 84 }}>Mã</th><th>Tên vật tư</th><th className="hide-sm" style={{ width: 130 }}>Nhóm</th><th className="num" style={{ width: 100 }}>Tồn</th><th className="num" style={{ width: 104 }}>Còn dùng được</th><th className="num" style={{ width: 96 }}>Tối thiểu</th><th style={{ width: 104 }}>Trạng thái</th><th style={{ width: 112 }}>Hạn gần nhất</th></tr></thead>
               <tbody>{pg.shown.map(r => (
                 <tr key={r.id} className="clickable" onClick={() => setDetail(r)}>
                   <td className="mono small nowrap">{r.code}</td>
                   <td><div className="item-name">{r.name}</div>{(r.track_lot || r.purchase_unit) && <div className="item-code">{[r.track_lot ? 'quản lý lô/HSD' : '', r.purchase_unit ? `1 ${r.purchase_unit} = ${fmtQty(r.purchase_factor)} ${r.unit}` : ''].filter(Boolean).join(' · ')}</div>}</td>
                   <td className="small hide-sm">{r.group_name}</td>
-                  <td className="num">{fmtQty(r.qty)} <span className="muted">{r.unit}</span></td>
-                  <td className="num"><b>{fmtQty(r.usable_qty)}</b></td>
+                  <td className="num" title={hasPack(r) ? `${fmtQty(r.qty)} ${r.unit}` : undefined}>{fmtUnits(r.qty, r)}</td>
+                  <td className="num" title={hasPack(r) ? `${fmtQty(r.usable_qty)} ${r.unit}` : undefined}><b>{fmtUnits(r.usable_qty, r, { bare: true })}</b></td>
                   <td className="num nowrap">
-                    {fmtQty(r.min_qty)}{r.min_is_custom && <span className="muted small" title="Đặt riêng cho chi nhánh"> *</span>}
+                    {fmtUnits(r.min_qty, r, { bare: true })}{r.min_is_custom && <span className="muted small" title="Đặt riêng cho chi nhánh"> *</span>}
                     {canMin && <button className="btn btn-ghost btn-sm icon-only" title="Sửa tồn tối thiểu" onClick={e => { e.stopPropagation(); setEditMin(r); }}><Pencil size={13} /></button>}
                   </td>
                   <td><StockBadge usable={r.usable_qty} min={r.min_qty} /></td>
@@ -166,6 +166,9 @@ function ItemDetail({ row, onClose }: { row: StockRow; onClose: () => void }) {
   const [unit, setUnit] = useState(row.unit);
   const [editName, setEditName] = useState(false);
   const [draftName, setDraftName] = useState(row.name);
+  const [convert, setConvert] = useState(false);
+  const u = { unit, purchase_unit: row.purchase_unit, purchase_factor: row.purchase_factor };
+  const F = (n: number | string) => fmtUnits(n, u);
   const saveName = async () => {
     const v = draftName.trim();
     if (!v || v === name) { setEditName(false); setDraftName(name); return; }
@@ -200,16 +203,18 @@ function ItemDetail({ row, onClose }: { row: StockRow; onClose: () => void }) {
       <div className="detail-grid">
         <div><small>Mã</small><b className="mono">{row.code}</b></div>
         <div><small>Nhóm</small><b>{row.group_name ?? '—'}</b></div>
-        <div><small>Đơn vị dùng</small>{canEdit ? <UnitInput value={unit} onCommit={u => void saveUnit(u)} disabled={busy} /> : <b>{unit}</b>}{row.purchase_unit && <div className="small muted">1 {row.purchase_unit} = {fmtQty(row.purchase_factor)} {row.unit}</div>}</div>
-        <div><small>Tồn tại {here?.name}</small><b>{fmtQty(row.qty)}</b> <span className="muted small">dùng được {fmtQty(row.usable_qty)}</span></div>
-        <div><small>Tối thiểu</small><b>{fmtQty(row.min_qty)}</b> <StockBadge usable={row.usable_qty} min={row.min_qty} /></div>
+        <div><small>Đơn vị dùng</small>{canEdit ? <UnitInput value={unit} onCommit={u => void saveUnit(u)} disabled={busy} /> : <b>{unit}</b>}
+          {hasPack(row) ? <div className="small muted">1 {row.purchase_unit} = {fmtQty(row.purchase_factor)} {unit}</div>
+            : canEdit && <div><button className="btn btn-ghost btn-sm" style={{ paddingLeft: 0 }} onClick={() => setConvert(true)} title="Bóc hộp ra dùng lẻ: tồn sẽ tính theo đơn vị nhỏ"><Package size={13} /> Tách đơn vị lẻ</button></div>}</div>
+        <div><small>Tồn tại {here?.name}</small><b>{F(row.qty)}</b> <span className="muted small">dùng được {F(row.usable_qty)}{hasPack(row) && ` · = ${fmtQty(row.qty)} ${unit}`}</span></div>
+        <div><small>Tối thiểu</small><b>{F(row.min_qty)}</b> <StockBadge usable={row.usable_qty} min={row.min_qty} /></div>
       </div>
 
       {row.lots.length > 0 && <>
         <h3 className="sec">Lô tại {here?.name}</h3>
         <div className="table-wrap"><table className="data">
           <thead><tr><th>Số lô</th><th>Hạn dùng</th><th className="num">Số lượng</th><th>Tình trạng</th></tr></thead>
-          <tbody>{row.lots.map(l => <tr key={l.id}><td className="mono">{l.lot_no || '(không số lô)'}</td><td>{fmtDate(l.expiry_date)}</td><td className="num">{fmtQty(l.qty)} {row.unit}</td><td><ExpiryBadge date={l.expiry_date} /></td></tr>)}</tbody>
+          <tbody>{row.lots.map(l => <tr key={l.id}><td className="mono">{l.lot_no || '(không số lô)'}</td><td>{fmtDate(l.expiry_date)}</td><td className="num">{F(l.qty)}</td><td><ExpiryBadge date={l.expiry_date} /></td></tr>)}</tbody>
         </table></div>
       </>}
 
@@ -222,10 +227,10 @@ function ItemDetail({ row, onClose }: { row: StockRow; onClose: () => void }) {
             return (
               <tr key={b.branch_id} className={isHere ? 'current' : undefined}>
                 <td><b>{b.branch_name}</b>{isHere && <span className="muted small"> (đang xem)</span>}</td>
-                <td className="num">{Number(b.qty) ? fmtQty(b.qty) : <span className="muted">0</span>}</td>
-                <td className="num">{fmtQty(b.usable)}</td>
-                <td className="num">{fmtQty(b.min)}</td>
-                <td className="num">{isHere ? '' : spare(b) > 0 ? <b style={{ color: 'var(--td-success)' }}>{fmtQty(spare(b))}</b> : <span className="muted">0</span>}</td>
+                <td className="num">{Number(b.qty) ? F(b.qty) : <span className="muted">0</span>}</td>
+                <td className="num">{F(b.usable)}</td>
+                <td className="num">{F(b.min)}</td>
+                <td className="num">{isHere ? '' : spare(b) > 0 ? <b style={{ color: 'var(--td-success)' }}>{F(spare(b))}</b> : <span className="muted">0</span>}</td>
                 <td><ExpiryBadge date={b.nearest_expiry} /></td>
                 {canRequest && <td className="nowrap">{!isHere && Number(b.usable) > 0 &&
                   <button className="btn btn-sm" onClick={() => request(b.branch_id)}>Xin từ đây</button>}</td>}
@@ -234,7 +239,42 @@ function ItemDetail({ row, onClose }: { row: StockRow; onClose: () => void }) {
           })}</tbody>
         </table></div>
       )}
-      <p className="muted small">“Có thể cấp” = còn dùng được trừ mức tối thiểu của chi nhánh đó, để chi nhánh cấp không bị thiếu. Số lượng xin mặc định {fmtQty(need)} {row.unit} (đủ lên 1,5 lần tối thiểu), sửa được ở bước sau.</p>
+      <p className="muted small">“Có thể cấp” = còn dùng được trừ mức tối thiểu của chi nhánh đó, để chi nhánh cấp không bị thiếu. Số lượng xin mặc định {F(need)} (đủ lên 1,5 lần tối thiểu), sửa được ở bước sau.</p>
+      {convert && <ConvertModal row={{ ...row, name, unit }} onClose={() => setConvert(false)} onDone={onClose} />}
+    </Modal>
+  );
+}
+
+/** Tách đơn vị lẻ: 1 {đơn vị hiện tại} = N {đơn vị nhỏ}; mọi số lượng cũ nhân N */
+function ConvertModal({ row, onClose, onDone }: { row: StockRow; onClose: () => void; onDone: () => void }) {
+  const { run, busy } = useAction();
+  const [small, setSmall] = useState(row.unit === 'hộp' ? 'cái' : '');
+  const [n, setN] = useState('');
+  const f = Number(n);
+  const okN = Number.isInteger(f) && f >= 2;
+  const ok = okN && small.trim() !== '' && small.trim().toLowerCase() !== row.unit.toLowerCase();
+  const save = async () => {
+    if (await run('set_item_conversion', { item_id: row.id, small_unit: small.trim(), factor: f },
+      `Đã tách: 1 ${row.unit} = ${f} ${small.trim()}. Tồn giờ tính theo ${small.trim()}.`)) { onClose(); onDone(); }
+  };
+  return (
+    <Modal title={`Tách đơn vị lẻ — ${row.name}`} size="narrow" onClose={onClose} footer={<>
+      <button className="btn" onClick={onClose}>Hủy</button>
+      <button className="btn btn-primary" disabled={busy || !ok} onClick={() => void save()}>Đồng ý tách</button>
+    </>}>
+      <p style={{ marginTop: 0 }} className="small">Dùng khi cần bóc {row.unit} ra cấp / dùng lẻ. Sau khi tách, tồn kho đếm theo đơn vị nhỏ và hiện gộp, ví dụ <b>1 {row.unit} 3 {small || '…'}</b>.</p>
+      <div className="row" style={{ gap: 8, alignItems: 'center', flexWrap: 'nowrap' }}>
+        <span>1 <b>{row.unit}</b> =</span>
+        <input className="input sm num" style={{ width: 80 }} type="number" min={2} step={1} value={n} onChange={e => setN(e.target.value)} placeholder="vd 10" autoFocus />
+        <input className="input sm" style={{ width: 100 }} list="unit-small" value={small} onChange={e => setSmall(e.target.value)} placeholder="sợi, cái…" />
+        <datalist id="unit-small">{UNIT_OPTIONS.filter(x => x !== row.unit).map(x => <option key={x} value={x} />)}</datalist>
+      </div>
+      {n !== '' && !okN && <p className="small text-danger">Số quy đổi phải là số nguyên từ 2 trở lên.</p>}
+      {ok && <div className="notice warning small" style={{ marginTop: 12 }}>
+        Toàn bộ số lượng của vật tư này ở <b>tất cả chi nhánh</b> (tồn, tối thiểu, lịch sử, phiếu đang dở) sẽ được nhân {f}.
+        Ví dụ tồn ở đây {fmtQty(row.qty)} {row.unit} → <b>{fmtQty(Number(row.qty) * f)} {small.trim()}</b> (vẫn hiện là {fmtQty(row.qty)} {row.unit}).
+        Việc này không tự hoàn tác được.
+      </div>}
     </Modal>
   );
 }
@@ -251,7 +291,7 @@ function MinModal({ row, branchId, onClose }: { row: StockRow; branchId: number;
       <button className="btn btn-primary" disabled={busy || v === '' || Number(v) < 0} onClick={() => save(v)}>Lưu</button>
     </>}>
       <p style={{ marginTop: 0 }}><b>{row.name}</b><br /><span className="muted small">Áp dụng riêng cho chi nhánh đang xem. Gợi ý: lượng dùng TB/ngày × (số ngày chờ hàng + 3).</span></p>
-      <Field label={`Tối thiểu (${row.unit})`}><input className="input" type="number" min={0} value={v} onChange={e => setV(e.target.value)} autoFocus /></Field>
+      <Field label={`Tối thiểu (${hasPack(row) ? `${row.purchase_unit} + ${row.unit}` : row.unit})`}><div><QtyInput value={v} onChange={setV} unit={row} width={120} autoFocus /></div></Field>
     </Modal>
   );
 }
