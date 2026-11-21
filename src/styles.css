@@ -329,3 +329,15 @@ tr.current td { background: var(--td-color-selected); }
 .qty-cell { display: grid; grid-template-columns: 88px 44px; gap: 6px; align-items: center; justify-content: end; }
 .qty-cell .input { width: 100%; text-align: right; }
 .qty-cell span { text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* Popup rất rộng (phiếu xin điều chuyển có cột từng chi nhánh) */
+.modal.xwide { width: min(1440px, 100%); }
+.transfer-lines th.br-col, .transfer-lines td.br-col { width: 64px; min-width: 56px; padding-left: 4px; padding-right: 4px; font-size: 12px; }
+.transfer-lines th.br-col { white-space: normal; line-height: 1.2; text-align: center; }
+.transfer-lines td.br-col { text-align: center; }
+.transfer-lines td.pickable { cursor: pointer; }
+.transfer-lines td.pickable:hover { background: #f2f5f9; }
+.transfer-lines td.picked { background: var(--td-color-selected); box-shadow: inset 0 0 0 2px var(--td-color-primary); border-radius: 6px; }
+.modal-foot .foot-summary { margin-right: auto; align-self: center; min-width: 0; }
+.text-danger { color: var(--td-danger); }
+.text-warning { color: #b45309; }

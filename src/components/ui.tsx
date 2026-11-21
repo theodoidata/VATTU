@@ -42,7 +42,7 @@ export function Kpi({ icon, label, value, sub, tone, onClick }: { icon: ReactNod
   );
 }
 
-export function Modal({ title, onClose, children, footer, size }: { title: ReactNode; onClose: () => void; children: ReactNode; footer?: ReactNode; size?: 'wide' | 'narrow' }) {
+export function Modal({ title, onClose, children, footer, size }: { title: ReactNode; onClose: () => void; children: ReactNode; footer?: ReactNode; size?: 'wide' | 'narrow' | 'xwide' }) {
   useEffect(() => {
     const k = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
     window.addEventListener('keydown', k);
@@ -150,6 +150,23 @@ export function ItemPicker({ items, value, onChange, placeholder = 'Tìm vật t
     return () => document.removeEventListener('mousedown', h);
   }, []);
   const pick = (id: number) => { onChange(id); setOpen(false); setQ(''); };
+  // Danh sách gợi ý dùng vị trí cố định theo màn hình → không bị bảng / popup có thanh cuộn che mất
+  const [pos, setPos] = useState<{ left: number; top?: number; bottom?: number; width: number; maxH: number } | null>(null);
+  useEffect(() => {
+    if (!open) return;
+    const place = () => {
+      const r = ref.current?.getBoundingClientRect(); if (!r) return;
+      const below = window.innerHeight - r.bottom - 8, above = r.top - 8;
+      const width = Math.min(Math.max(r.width, 340), window.innerWidth - 16);
+      const left = Math.max(8, Math.min(r.left, window.innerWidth - width - 8));
+      setPos(below >= 220 || below >= above
+        ? { left, top: r.bottom + 4, width, maxH: Math.min(320, below) }
+        : { left, bottom: window.innerHeight - r.top + 4, width, maxH: Math.min(320, above) });
+    };
+    place();
+    window.addEventListener('scroll', place, true); window.addEventListener('resize', place);
+    return () => { window.removeEventListener('scroll', place, true); window.removeEventListener('resize', place); };
+  }, [open]);
   let lastGroup: string | null | undefined;
   return (
     <div className="combo" ref={ref}>
@@ -164,8 +181,8 @@ export function ItemPicker({ items, value, onChange, placeholder = 'Tìm vật t
           else if (e.key === 'Enter' && list[hl]) { e.preventDefault(); pick(list[hl].id); }
           else if (e.key === 'Escape') setOpen(false);
         }} />
-      {open && (
-        <div className="combo-list">
+      {open && pos && (
+        <div className="combo-list" style={{ position: 'fixed', left: pos.left, top: pos.top, bottom: pos.bottom, right: 'auto', width: pos.width, maxHeight: pos.maxH, zIndex: 400 }}>
           {list.length === 0 && <div className="empty small">Không tìm thấy vật tư</div>}
           {list.map((i, idx) => {
             const head = i.group_name !== lastGroup ? <div className="grp">{i.group_name ?? 'Khác'}</div> : null;

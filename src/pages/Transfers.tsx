@@ -69,82 +69,108 @@ export default function TransfersPage() {
   );
 }
 
-type Line = { key: number; item_id: number | null; qty: string };
+type Line = { key: number; item_id: number | null; qty: string; src: number | null; manual: boolean };
 let seq = 1;
 
-function CreateModal({ onClose, onCreated }: { onClose: () => void; onCreated: (id: number) => void }) {
+function CreateModal({ onClose, onCreated }: { onClose: () => void; onCreated: (id: number | null) => void }) {
   const { branchId, branches, canViewAll } = useApp();
   const items = useRpc<Item[]>('list_items');
   const matrix = useRpc<MatrixRow[]>(canViewAll ? 'get_stock_matrix' : null);
   const [draft] = useState(() => { const d = handoff.transferDraft; handoff.transferDraft = undefined; return d; });
+  const draftFrom = draft?.from_branch_id && draft.from_branch_id !== branchId ? draft.from_branch_id : null;
   const [lines, setLines] = useState<Line[]>(() => draft?.items.length
-    ? draft.items.map(x => ({ key: seq++, item_id: x.item_id, qty: String(x.qty) })) : [{ key: seq++, item_id: null, qty: '' }]);
-  const [from, setFrom] = useState<number | ''>(draft?.from_branch_id && draft.from_branch_id !== branchId ? draft.from_branch_id : '');
+    ? draft.items.map(x => ({ key: seq++, item_id: x.item_id, qty: String(x.qty), src: draftFrom, manual: Boolean(draftFrom) }))
+    : [{ key: seq++, item_id: null, qty: '', src: null, manual: false }]);
   const [note, setNote] = useState('');
   const { run, busy } = useAction();
   const others = branches.filter(b => b.id !== branchId);
   const mx = useMemo(() => new Map((matrix.data ?? []).map(r => [r.id, r])), [matrix.data]);
-  const valid = lines.filter(l => l.item_id && Number(l.qty) > 0);
+  // Ô không có trong ma trận = chi nhánh đó tồn 0 (máy chủ bỏ ô trống để đỡ tốn dữ liệu)
+  const cell = (itemId: number | null, b: number) => (itemId ? mx.get(itemId)?.by_branch[String(b)] : undefined) ?? { qty: 0, usable: 0, min: 0 };
 
-  // Gợi ý chi nhánh đáp ứng được nhiều nhất (vẫn còn trên mức tối thiểu sau khi cấp)
-  const ranking = useMemo(() => {
-    if (!matrix.data || !valid.length) return [];
-    return others.map(b => {
-      let full = 0, spare = 0;
-      for (const l of valid) {
-        const c = mx.get(l.item_id!)?.by_branch[String(b.id)];
-        if (!c) continue;
-        const surplus = Number(c.usable) - Number(c.min);
-        if (Number(c.usable) >= Number(l.qty)) full++;
-        spare += Math.max(0, Math.min(surplus, Number(l.qty)));
-      }
-      return { b, full, spare };
-    }).sort((a, b) => b.full - a.full || b.spare - a.spare);
-  }, [matrix.data, valid, others, mx]);
-  useEffect(() => { if (from === '' && ranking[0]?.full) setFrom(ranking[0].b.id); }, [ranking, from]);
+  // Tự chọn chi nhánh cấp cho từng dòng: đủ hàng và còn dư nhiều nhất sau khi cấp (dòng người dùng tự chọn thì giữ nguyên)
+  const bestFor = (l: Line): number | null => {
+    if (!l.item_id || !matrix.data) return null;
+    const need = Number(l.qty) || 0;
+    const scored = others.map(b => { const c = cell(l.item_id, b.id); return { id: b.id, usable: Number(c.usable), spare: Number(c.usable) - Number(c.min) }; })
+      .filter(x => x.usable > 0)
+      .sort((a, b) => Number(b.usable >= need) - Number(a.usable >= need) || b.spare - a.spare || b.usable - a.usable);
+    return scored[0]?.id ?? null;
+  };
+  useEffect(() => {
+    if (!matrix.data) return;
+    setLines(ls => { let changed = false; const n = ls.map(l => { if (l.manual) return l; const b = bestFor(l); if (b === l.src) return l; changed = true; return { ...l, src: b }; }); return changed ? n : ls; });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [matrix.data, lines.map(l => `${l.item_id}:${l.qty}`).join('|')]);
 
   const set = (key: number, patch: Partial<Line>) => setLines(ls => ls.map(l => (l.key === key ? { ...l, ...patch } : l)));
+  const valid = lines.filter(l => l.item_id && Number(l.qty) > 0);
+  const noSrc = valid.filter(l => !l.src);
+  const short = canViewAll ? valid.filter(l => l.src && Number(cell(l.item_id, l.src).usable) < Number(l.qty)) : [];
+  const bySrc = useMemo(() => {
+    const m = new Map<number, Line[]>();
+    for (const l of valid) if (l.src) m.set(l.src, [...(m.get(l.src) ?? []), l]);
+    return [...m.entries()];
+  }, [valid]);
+  const nameOf = (id: number) => branches.find(b => b.id === id)?.name ?? '';
+
   async function submit() {
-    const r = await run<Transfer>('create_transfer', { to_branch_id: branchId, from_branch_id: from, note, lines: valid.map(l => ({ item_id: l.item_id, qty: Number(l.qty) })) }, 'Đã gửi yêu cầu điều chuyển');
-    if (r) onCreated(r.id);
+    let lastId: number | null = null, ok = 0;
+    for (const [src, ls] of bySrc) {
+      const last = ok === bySrc.length - 1;
+      const r = await run<Transfer>('create_transfer', { to_branch_id: branchId, from_branch_id: src, note, lines: ls.map(l => ({ item_id: l.item_id, qty: Number(l.qty) })) },
+        last ? (bySrc.length > 1 ? `Đã gửi ${bySrc.length} phiếu yêu cầu điều chuyển` : 'Đã gửi yêu cầu điều chuyển') : undefined);
+      if (!r) break;
+      ok++; lastId = r.id;
+      setLines(cur => cur.filter(l => !ls.some(x => x.key === l.key))); // phiếu đã gửi thì bỏ khỏi bảng, lỗi giữa chừng không bị gửi trùng
+    }
+    if (ok === bySrc.length) onCreated(bySrc.length === 1 ? lastId : null);
   }
   const activeItems = (items.data ?? []).filter(i => i.active);
   return (
-    <Modal size="wide" title={`Yêu cầu điều chuyển về ${branches.find(b => b.id === branchId)?.name}`} onClose={onClose} footer={<>
+    <Modal size="xwide" title={`Yêu cầu điều chuyển về ${nameOf(branchId)}`} onClose={onClose} footer={<>
+      <div className="foot-summary small">
+        {bySrc.length > 0 ? <>Sẽ gửi <b>{bySrc.length} phiếu</b>: {bySrc.map(([src, ls]) => `${nameOf(src)} (${ls.length} vật tư)`).join(' · ')}</> : <span className="muted">Chọn vật tư và nhập số lượng cần xin.</span>}
+        {noSrc.length > 0 && <div className="text-danger">{noSrc.length} dòng chưa chọn chi nhánh cấp.</div>}
+        {short.length > 0 && <div className="text-warning">{short.length} dòng chi nhánh cấp không đủ hàng, nên chọn chi nhánh khác.</div>}
+      </div>
       <button className="btn" onClick={onClose}>Đóng</button>
-      <button className="btn btn-primary" disabled={busy || !valid.length || !from} onClick={submit}><Send size={16} /> Gửi yêu cầu</button>
+      <button className="btn btn-primary" disabled={busy || !valid.length || noSrc.length > 0} onClick={submit}><Send size={16} /> Gửi yêu cầu</button>
     </>}>
-      <div className="table-wrap"><table className="data lines-table">
-        <thead><tr><th style={{ minWidth: 240 }}>Vật tư cần</th><th style={{ width: 110 }}>Số lượng</th>
-          {canViewAll && others.map(b => <th key={b.id} className="num small" style={{ background: from === b.id ? 'var(--td-color-selected)' : undefined }}>{b.name}</th>)}<th style={{ width: 36 }} /></tr></thead>
+      <div className="table-wrap"><table className="data lines-table transfer-lines">
+        <thead><tr>
+          <th style={{ minWidth: 220 }}>Vật tư cần</th><th className="num" style={{ width: 150 }}>Số lượng</th>
+          <th style={{ width: 150 }}>Xin từ chi nhánh</th><th style={{ width: 40 }} />
+          {canViewAll && others.map(b => <th key={b.id} className="num br-col" title={`Còn dùng được ở ${b.name}`}>{b.name}</th>)}
+        </tr></thead>
         <tbody>{lines.map(l => {
           const it = activeItems.find(i => i.id === l.item_id);
           return (
             <tr key={l.key}>
-              <td><ItemPicker items={activeItems} value={l.item_id} onChange={id => set(l.key, { item_id: id })} exclude={lines.filter(x => x.key !== l.key).map(x => x.item_id!).filter(Boolean)} /></td>
-              <td><div className="row" style={{ flexWrap: 'nowrap', gap: 4 }}><input className="input sm" type="number" min={0} step="any" style={{ width: 70 }} value={l.qty} onChange={e => set(l.key, { qty: e.target.value })} /><span className="muted small">{it?.unit}</span></div></td>
+              <td><ItemPicker items={activeItems} value={l.item_id} onChange={id => set(l.key, { item_id: id, manual: false })} exclude={lines.filter(x => x.key !== l.key).map(x => x.item_id!).filter(Boolean)} /></td>
+              <td className="num"><div className="qty-cell"><input className="input sm" type="number" min={0} step="any" value={l.qty} onChange={e => set(l.key, { qty: e.target.value })} /><span className="muted small">{it?.unit}</span></div></td>
+              <td><select className="select sm" style={{ width: '100%' }} value={l.src ?? ''} onChange={e => set(l.key, { src: e.target.value ? Number(e.target.value) : null, manual: true })}>
+                <option value="">— Chọn —</option>{others.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
+              </select></td>
+              <td><button className="btn btn-ghost btn-sm icon-only" onClick={() => setLines(ls => ls.length > 1 ? ls.filter(x => x.key !== l.key) : [{ key: seq++, item_id: null, qty: '', src: null, manual: false }])} aria-label="Xóa dòng"><Trash2 size={15} /></button></td>
               {canViewAll && others.map(b => {
-                const c = l.item_id ? mx.get(l.item_id)?.by_branch[String(b.id)] : undefined;
-                const enough = c && Number(c.usable) >= Number(l.qty || 0) && Number(l.qty) > 0;
-                return <td key={b.id} className="num small" style={{ background: from === b.id ? 'var(--td-color-selected)' : undefined, color: c ? (enough ? 'var(--td-success)' : 'var(--td-text-muted)') : undefined, fontWeight: enough ? 700 : 400 }}>
-                  {c ? fmtQty(c.usable) : ''}</td>;
+                const c = cell(l.item_id, b.id), u = Number(c.usable);
+                const enough = u > 0 && u >= Number(l.qty || 0);
+                const picked = l.src === b.id;
+                return <td key={b.id} className={`num br-col${picked ? ' picked' : ''}${l.item_id && u > 0 ? ' pickable' : ''}`}
+                  title={l.item_id ? `${b.name}: còn dùng được ${fmtQty(u)}${Number(c.min) ? ` · tối thiểu ${fmtQty(c.min)}` : ''}${u > 0 ? ' — bấm để xin từ đây' : ''}` : ''}
+                  onClick={() => { if (l.item_id && u > 0) set(l.key, { src: b.id, manual: true }); }}>
+                  {!l.item_id ? '' : u > 0 ? <span style={{ color: enough ? 'var(--td-success)' : undefined, fontWeight: enough ? 700 : 400 }}>{fmtQty(u)}</span> : <span className="muted">0</span>}
+                </td>;
               })}
-              <td><button className="btn btn-ghost btn-sm icon-only" onClick={() => setLines(ls => ls.length > 1 ? ls.filter(x => x.key !== l.key) : ls)} aria-label="Xóa dòng"><Trash2 size={15} /></button></td>
             </tr>
           );
         })}</tbody>
       </table></div>
-      <button className="btn btn-sm" style={{ marginTop: 8 }} onClick={() => setLines(ls => [...ls, { key: seq++, item_id: null, qty: '' }])}><Plus size={14} /> Thêm vật tư</button>
-      {canViewAll && ranking.length > 0 && ranking[0].full > 0 && (
-        <div className="notice" style={{ marginTop: 12 }}><Lightbulb size={14} style={{ verticalAlign: -2 }} /> Gợi ý: <b>{ranking[0].b.name}</b> có đủ {ranking[0].full}/{valid.length} vật tư
-          {ranking[1]?.full ? <>, tiếp theo là {ranking[1].b.name} ({ranking[1].full}/{valid.length})</> : null}. Số trong bảng là lượng còn dùng được ở từng chi nhánh.</div>
-      )}
-      <div className="form-grid" style={{ marginTop: 12 }}>
-        <Field label="Xin hàng từ chi nhánh (B)">
-          <select className="select" value={from} onChange={e => setFrom(e.target.value ? Number(e.target.value) : '')}>
-            <option value="">— Chọn chi nhánh cấp hàng —</option>{others.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
-          </select>
-        </Field>
+      <button className="btn btn-sm" style={{ marginTop: 8 }} onClick={() => setLines(ls => [...ls, { key: seq++, item_id: null, qty: '', src: null, manual: false }])}><Plus size={14} /> Thêm vật tư</button>
+      {canViewAll && <p className="muted small" style={{ marginBottom: 0 }}><Lightbulb size={13} style={{ verticalAlign: -2 }} /> Số trong bảng là lượng <b>còn dùng được</b> ở từng chi nhánh (0 = hết hàng), <b style={{ color: 'var(--td-success)' }}>xanh</b> là đủ số lượng cần.
+        Hệ thống tự chọn chi nhánh đủ hàng và còn dư nhiều nhất; bấm vào ô số của chi nhánh khác để đổi. Vật tư xin từ nhiều chi nhánh sẽ tự tách thành nhiều phiếu.</p>}
+      <div style={{ marginTop: 12 }}>
         <Field label="Ghi chú / lý do"><input className="input" value={note} onChange={e => setNote(e.target.value)} placeholder="VD: cần gấp cho ca implant thứ 7" /></Field>
       </div>
     </Modal>
