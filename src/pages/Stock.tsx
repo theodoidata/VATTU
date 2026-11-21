@@ -121,8 +121,8 @@ export default function StockPage() {
             <span className="muted small">{rows.length} vật tư</span>
           </div>
           {loading ? <Loading /> : error ? <div className="notice danger">{error}</div> : rows.length === 0 ? <Empty>{showAll ? 'Không có vật tư phù hợp.' : 'Không có vật tư phù hợp. Vật tư chưa có tồn đang được ẩn, tick “Hiện cả vật tư không có tồn” để xem.'}</Empty> : (
-            <><div className="table-wrap"><table className="data">
-              <thead><tr><th>Mã</th><th>Tên vật tư</th><th className="hide-sm">Nhóm</th><th className="num">Tồn</th><th className="num">Còn dùng được</th><th className="num">Tối thiểu</th><th>Trạng thái</th><th>Hạn gần nhất</th></tr></thead>
+            <><div className="table-wrap"><table className="data fixed-cols">
+              <thead><tr><th style={{ width: 84 }}>Mã</th><th>Tên vật tư</th><th className="hide-sm" style={{ width: 130 }}>Nhóm</th><th className="num" style={{ width: 80 }}>Tồn</th><th className="num" style={{ width: 104 }}>Còn dùng được</th><th className="num" style={{ width: 96 }}>Tối thiểu</th><th style={{ width: 104 }}>Trạng thái</th><th style={{ width: 112 }}>Hạn gần nhất</th></tr></thead>
               <tbody>{pg.shown.map(r => (
                 <tr key={r.id} className="clickable" onClick={() => setDetail(r)}>
                   <td className="mono small nowrap">{r.code}</td>

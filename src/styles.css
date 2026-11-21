@@ -341,3 +341,9 @@ tr.current td { background: var(--td-color-selected); }
 .modal-foot .foot-summary { margin-right: auto; align-self: center; min-width: 0; }
 .text-danger { color: var(--td-danger); }
 .text-warning { color: #b45309; }
+
+/* Bảng có phân trang: cố định độ rộng cột để đổi trang không bị nhảy cột */
+table.data.fixed-cols { table-layout: fixed; min-width: 820px; }
+table.data.fixed-cols td { overflow: hidden; text-overflow: ellipsis; }
+table.data.fixed-cols td .item-name { white-space: normal; }
+table.data.fixed-cols th { white-space: normal; line-height: 1.25; }

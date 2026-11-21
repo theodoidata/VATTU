@@ -69,8 +69,8 @@ function StockMatrix() {
         <span className="spacer" /><ExportBtn onClick={doExport} disabled={!rows.length} />
       </div>
       {m.loading ? <Loading /> : m.error ? <div className="notice danger">{m.error}</div> : !rows.length ? <Empty>Không có dữ liệu.</Empty> : (
-        <><div className="table-wrap" style={{ maxHeight: '70vh' }}><table className="data matrix">
-          <thead><tr><th>Vật tư</th><th>ĐVT</th>{branches.map(b => <th key={b.id} className="num">{b.name}</th>)}<th className="num">Tổng</th></tr></thead>
+        <><div className="table-wrap" style={{ maxHeight: '70vh' }}><table className="data matrix fixed-cols">
+          <thead><tr><th style={{ width: 240 }}>Vật tư</th><th style={{ width: 64 }}>ĐVT</th>{branches.map(b => <th key={b.id} className="num" style={{ width: 84, whiteSpace: 'normal' }}>{b.name}</th>)}<th className="num" style={{ width: 80 }}>Tổng</th></tr></thead>
           <tbody>{pg.shown.map(r => (
             <tr key={r.id}><td><div className="item-name">{r.name}</div><div className="item-code">{r.code} · {r.group_name}</div></td><td className="small">{r.unit}</td>
               {branches.map(b => { const c = r.by_branch[String(b.id)]; return <td key={b.id} className={`num ${cls(c)}`} title={c ? `Còn dùng được ${fmtQty(c.usable)} · tối thiểu ${fmtQty(c.min)}` : ''}>{fmtQty(c?.qty)}</td>; })}
@@ -97,8 +97,8 @@ function OwnStock() {
     <>
       <div className="toolbar"><span className="muted small">Tồn kho chi nhánh {name}</span><span className="spacer" /><ExportBtn onClick={doExport} disabled={!s.data?.length} /></div>
       {s.loading ? <Loading /> : s.error ? <div className="notice danger">{s.error}</div> : (
-        <><div className="table-wrap"><table className="data">
-          <thead><tr><th>Vật tư</th><th className="num">Tồn</th><th className="num">Còn dùng được</th><th className="num">Tối thiểu</th><th>Trạng thái</th></tr></thead>
+        <><div className="table-wrap"><table className="data fixed-cols">
+          <thead><tr><th>Vật tư</th><th className="num" style={{ width: 110 }}>Tồn</th><th className="num" style={{ width: 130 }}>Còn dùng được</th><th className="num" style={{ width: 100 }}>Tối thiểu</th><th style={{ width: 130 }}>Trạng thái</th></tr></thead>
           <tbody>{pgO.shown.map(r => <tr key={r.id}><td><span className="item-name">{r.name}</span> <span className="item-code">{r.code}</span></td><td className="num">{fmtQty(r.qty)} {r.unit}</td><td className="num">{fmtQty(r.usable_qty)}</td><td className="num">{fmtQty(r.min_qty)}</td><td><StockBadge usable={r.usable_qty} min={r.min_qty} /></td></tr>)}</tbody>
         </table></div>{pgO.pager}</>
       )}
