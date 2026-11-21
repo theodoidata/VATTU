@@ -73,7 +73,7 @@ export function Loading() { return <div className="empty"><Loader2 className="sp
 /* Danh mục vật tư (811 dòng) ít khi đổi → nhớ trong phiên để khỏi tải lại mỗi lần mở trang (đỡ tốn dữ liệu).
    Chỉ xóa bộ nhớ khi có thao tác sửa danh mục / mức tối thiểu, hoặc khi đổi người dùng. */
 const CACHED_FNS = new Set(['list_items']);
-const CATALOG_WRITES = new Set(['save_item', 'save_min_qty']);
+const CATALOG_WRITES = new Set(['save_item', 'save_min_qty', 'update_item_basic']);
 const rpcCache = new Map<string, Promise<unknown>>();
 export const clearRpcCache = () => rpcCache.clear();
 
@@ -330,4 +330,43 @@ export function Chips<V extends string>({ value, options, onChange }: { value: V
       {options.map(([v, l]) => <button type="button" key={v} className={`chip${value === v ? ' active' : ''}`} onClick={() => onChange(v)}>{l}</button>)}
     </div>
   );
+}
+
+
+/* ---------------- Đơn vị tính ---------------- */
+export const UNIT_OPTIONS = ['cái', 'hộp', 'gói', 'sợi', 'vỉ', 'tuýp', 'lọ', 'chai', 'bộ', 'cuộn', 'ống', 'miếng', 'túi', 'cây', 'tấm', 'viên', 'đôi', 'bịch', 'can', 'thùng', 'ml', 'g', 'kg'];
+
+/** Ô đơn vị: chọn nhanh trong danh sách hoặc gõ đơn vị khác. Gọi onCommit khi rời ô / Enter nếu có thay đổi. */
+export function UnitInput({ value, onCommit, disabled, width = 84 }: { value: string; onCommit: (v: string) => void; disabled?: boolean; width?: number }) {
+  const [v, setV] = useState(value);
+  const sent = useRef(value); // tránh gửi 2 lần (Enter rồi rời ô)
+  useEffect(() => { setV(value); sent.current = value; }, [value]);
+  const commit = () => { const t = v.trim(); if (!t) { setV(value); return; } if (t !== value && t !== sent.current) { sent.current = t; onCommit(t); } };
+  return (<>
+    <input className="input sm" list="unit-options" style={{ width }} value={v} disabled={disabled}
+      title="Đổi đơn vị tính của vật tư (áp dụng cho cả danh mục)"
+      onChange={e => setV(e.target.value)} onBlur={commit} onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); commit(); } if (e.key === 'Escape') setV(value); }} />
+    <datalist id="unit-options">{UNIT_OPTIONS.map(u => <option key={u} value={u} />)}</datalist>
+  </>);
+}
+
+/* ---------------- Lưu tạm phiếu đang nhập dở (chỉ trên máy này) ---------------- */
+type Draft<T> = { at: string; data: T };
+export function readDraft<T>(key: string): T | null { try { const s = localStorage.getItem(key); return s ? (JSON.parse(s) as Draft<T>).data : null; } catch { return null; } }
+export function useFormDraft<T>(key: string, data: T, isEmpty: (d: T) => boolean) {
+  const read = (): Draft<T> | null => { try { const s = localStorage.getItem(key); return s ? JSON.parse(s) as Draft<T> : null; } catch { return null; } };
+  const [saved, setSaved] = useState<Draft<T> | null>(read);
+  useEffect(() => { setSaved(read()); }, [key]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Tự lưu sau mỗi lần sửa (chờ 0,8 giây) để lỡ tải lại trang / mất mạng cũng không mất
+  useEffect(() => {
+    if (isEmpty(data)) return;
+    const t = window.setTimeout(() => {
+      const d = { at: new Date().toISOString(), data };
+      try { localStorage.setItem(key, JSON.stringify(d)); setSaved(d); } catch { /* bộ nhớ trình duyệt bị chặn */ }
+    }, 800);
+    return () => window.clearTimeout(t);
+  }, [key, JSON.stringify(data)]); // eslint-disable-line react-hooks/exhaustive-deps
+  const save = () => { const d = { at: new Date().toISOString(), data }; try { localStorage.setItem(key, JSON.stringify(d)); setSaved(d); return true; } catch { return false; } };
+  const clear = () => { try { localStorage.removeItem(key); } catch { /* ignore */ } setSaved(null); };
+  return { saved, save, clear };
 }

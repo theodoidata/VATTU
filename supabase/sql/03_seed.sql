@@ -24,6 +24,7 @@ insert into permissions (key, group_name, label, description, sort_order) values
   ('inv_usage_create',      'Xuất dùng',   'Ghi xuất dùng hằng ngày', 'Trừ tồn theo lô hết hạn sớm nhất trước.', 20),
   ('inv_usage_void',        'Xuất dùng',   'Hủy phiếu xuất trong ngày', 'Hoàn lại tồn khi ghi nhầm.', 21),
   ('inv_receipt_create',    'Nhập kho',    'Nhập kho (nhập tay)', 'Tạm thời chi nhánh tự nhập; sau này Kế toán nhập và phân bổ.', 30),
+  ('inv_receipt_edit',      'Nhập kho',    'Sửa phiếu nhập đã lưu', 'Dành cho BGĐ / Kế toán: sửa số lượng, lô, hạn dùng, bỏ dòng nhập nhầm; tồn kho tự điều chỉnh theo chênh lệch.', 31),
   ('inv_transfer_request',  'Điều chuyển', 'Tạo / hủy yêu cầu điều chuyển', 'Chi nhánh thiếu hàng (A) xin hàng từ chi nhánh khác (B).', 40),
   ('inv_transfer_approve',  'Điều chuyển', 'Duyệt / từ chối yêu cầu (bên cấp hàng)', 'Chi nhánh B quyết định số lượng đồng ý cấp.', 41),
   ('inv_transfer_ship',     'Điều chuyển', 'Xác nhận đã gửi hàng', 'Trừ kho chi nhánh B.', 42),
@@ -60,7 +61,7 @@ select d.id, pm.key,
     when 'KHO' then pm.key in ('inv_stock_view','inv_stock_view_all','inv_usage_create','inv_receipt_create',
       'inv_transfer_request','inv_transfer_ship','inv_transfer_receive','inv_stocktake_count','inv_report_view')
     when 'BACSI' then pm.key in ('inv_stock_view','inv_usage_create')
-    when 'KETOAN' then pm.key in ('inv_stock_view','inv_stock_view_all','inv_all_branches','inv_receipt_create',
+    when 'KETOAN' then pm.key in ('inv_stock_view','inv_stock_view_all','inv_all_branches','inv_receipt_create','inv_receipt_edit',
       'inv_catalog_manage','inv_report_view','inv_report_view_all','inv_report_export')
     else false end
 from departments d cross join permissions pm

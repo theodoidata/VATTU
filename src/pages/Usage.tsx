@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
-import { Plus, Trash2, Save, Ban } from 'lucide-react';
+import { Plus, Trash2, Save, Ban, Clock, X } from 'lucide-react';
 import { useApp } from '../lib/app-context';
-import { Badge, Empty, Field, ItemPicker, Loading, PageHeader, ReasonModal, useAction, useRpc, usePaged } from '../components/ui';
+import { Badge, Empty, Field, ItemPicker, Loading, PageHeader, ReasonModal, readDraft, useAction, useFormDraft, useRpc, usePaged } from '../components/ui';
 import { USAGE_REASONS, addDays, fmtDate, fmtDateTime, fmtQty } from '../lib/format';
 import type { StockRow, UsageDoc } from '../lib/types';
 
@@ -10,16 +10,22 @@ let seq = 1;
 const newLine = (): Line => ({ key: seq++, item_id: null, qty: '', reason: 'Điều trị', lot_id: null });
 
 export default function UsagePage() {
-  const { branchId, branches, today, canAct, has } = useApp();
+  const { branchId, branches, today, canAct, has, session, toast } = useApp();
   const branch = branches.find(b => b.id === branchId);
   const allowed = canAct(branchId);
   const stock = useRpc<StockRow[]>('get_stock', { branch_id: branchId });
   const [from, setFrom] = useState(addDays(today, -6));
   const [to, setTo] = useState(today);
   const docs = useRpc<UsageDoc[]>(allowed || has('inv_report_view_all') ? 'list_usage' : null, { branch_id: branchId, from, to });
-  const [date, setDate] = useState(today);
-  const [note, setNote] = useState('');
-  const [lines, setLines] = useState<Line[]>([newLine()]);
+  // Phiếu đang ghi dở được lưu tạm trên máy này (tự lưu + nút Lưu tạm), mở lại trang sẽ hiện lại
+  type UForm = { date: string; note: string; lines: Line[] };
+  const draftKey = `kho-draft-usage-${session.profile?.id}-${branchId}`;
+  const [initial] = useState(() => readDraft<UForm>(draftKey));
+  if (initial) seq = Math.max(seq, ...initial.lines.map(l => l.key + 1));
+  const [date, setDate] = useState(initial?.date ?? today);
+  const [note, setNote] = useState(initial?.note ?? '');
+  const [lines, setLines] = useState<Line[]>(initial?.lines ?? [newLine()]);
+  const draft = useFormDraft<UForm>(draftKey, { date, note, lines }, f => !f.note.trim() && f.lines.every(l => !l.item_id && !l.qty));
   const [voiding, setVoiding] = useState<UsageDoc | null>(null);
   const { run, busy } = useAction();
   const pg = usePaged(docs.data ?? [], [branchId, from, to]);
@@ -38,7 +44,7 @@ export default function UsagePage() {
       branch_id: branchId, usage_date: date, note,
       lines: valid.map(l => ({ item_id: l.item_id, qty: Number(l.qty), reason: l.reason, lot_id: l.lot_id })),
     }, `Đã ghi xuất ${valid.length} vật tư`);
-    if (r) { setLines([newLine()]); setNote(''); }
+    if (r) { draft.clear(); setLines([newLine()]); setNote(''); }
   }
 
   return (
@@ -49,7 +55,10 @@ export default function UsagePage() {
         <div className="notice warning">Bạn đang xem chi nhánh {branch?.name}. Chỉ được ghi xuất dùng cho chi nhánh của mình.</div>
       ) : (
         <section className="panel">
-          <div className="panel-head"><h2>Phiếu xuất dùng mới</h2></div>
+          <div className="panel-head"><h2>Phiếu xuất dùng mới</h2>
+            {draft.saved && <span className="small muted"><Clock size={13} style={{ verticalAlign: -2 }} /> {initial ? 'Đang mở phiếu lưu tạm' : 'Đã lưu tạm'} lúc {fmtDateTime(draft.saved.at)}
+              {' '}<button className="btn btn-ghost btn-sm" onClick={() => { draft.clear(); setLines([newLine()]); setNote(''); setDate(today); }}><X size={13} /> Bỏ phiếu tạm</button></span>}
+          </div>
           <div className="form-grid" style={{ marginBottom: 10 }}>
             <Field label="Ngày dùng"><input className="input" type="date" value={date} max={today} min={addDays(today, -7)} onChange={e => setDate(e.target.value)} /></Field>
             <Field label="Ghi chú (không bắt buộc)"><input className="input" value={note} onChange={e => setNote(e.target.value)} placeholder="VD: ca chiều, ghế 2…" /></Field>
@@ -83,6 +92,7 @@ export default function UsagePage() {
             <button className="btn" onClick={() => setLines(ls => [...ls, newLine()])}><Plus size={16} /> Thêm dòng</button>
             <span className="spacer" />
             <span className="muted small">{valid.length} vật tư</span>
+            <button className="btn" onClick={() => toast(draft.save() ? 'Đã lưu tạm phiếu trên máy này. Lần sau mở Xuất dùng sẽ tự hiện lại.' : 'Trình duyệt chặn lưu tạm.', 'success')}><Clock size={16} /> Lưu tạm</button>
             <button className="btn btn-primary" disabled={busy || !valid.length || lines.some(l => l.reason === 'Hủy hết hạn' && l.item_id && !l.lot_id)} onClick={submit}><Save size={16} /> Ghi xuất dùng</button>
           </div>
         </section>

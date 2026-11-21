@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
-import { ArrowRightLeft, Download, Pencil } from 'lucide-react';
+import { ArrowRightLeft, Check, Download, Pencil, X } from 'lucide-react';
 import { useApp } from '../lib/app-context';
-import { Chips, Empty, ExpiryBadge, Field, FilterBlock, FilterPanel, GroupList, Loading, Modal, PageHeader, StockBadge, useAction, useRpc, usePaged } from '../components/ui';
+import { Chips, Empty, ExpiryBadge, Field, FilterBlock, FilterPanel, GroupList, Loading, Modal, PageHeader, StockBadge, UnitInput, useAction, useRpc, usePaged } from '../components/ui';
 import { EXPIRY_LEVEL, STOCK_LEVEL, fmtDate, fmtQty, norm, rowAlerts } from '../lib/format';
 import type { Lot, StockRow } from '../lib/types';
 import { handoff } from '../lib/handoff';
@@ -159,6 +159,21 @@ function ItemDetail({ row, onClose }: { row: StockRow; onClose: () => void }) {
   const { branchId, branches, has, canAct, go } = useApp();
   const here = branches.find(b => b.id === branchId);
   const all = useRpc<BranchStock[]>('get_item_branches', { item_id: row.id });
+  // Đổi tên / đơn vị ngay trong khung chi tiết (người có quyền sửa danh mục)
+  const canEdit = has('inv_catalog_manage');
+  const { run, busy } = useAction();
+  const [name, setName] = useState(row.name);
+  const [unit, setUnit] = useState(row.unit);
+  const [editName, setEditName] = useState(false);
+  const [draftName, setDraftName] = useState(row.name);
+  const saveName = async () => {
+    const v = draftName.trim();
+    if (!v || v === name) { setEditName(false); setDraftName(name); return; }
+    if (await run('update_item_basic', { id: row.id, name: v }, `Đã đổi tên: ${name} → ${v}`)) { setName(v); setEditName(false); }
+  };
+  const saveUnit = async (u: string) => {
+    if (await run('update_item_basic', { id: row.id, unit: u }, `Đã đổi đơn vị “${name}”: ${unit} → ${u}`)) setUnit(u);
+  };
   const canRequest = has('inv_transfer_request') && canAct(branchId);
   const need = Math.max(Math.ceil(Number(row.min_qty) * 1.5 - Number(row.usable_qty)), 1);
   const spare = (b: BranchStock) => Math.max(0, Number(b.usable) - Number(b.min));
@@ -169,7 +184,15 @@ function ItemDetail({ row, onClose }: { row: StockRow; onClose: () => void }) {
     onClose(); go('dieu-chuyen');
   };
   return (
-    <Modal size="wide" title={row.name} onClose={onClose} footer={<>
+    <Modal size="wide" onClose={onClose} title={editName
+      ? <span className="row" style={{ gap: 6, flexWrap: 'nowrap' }}>
+          <input className="input" style={{ minWidth: 280 }} value={draftName} autoFocus onChange={e => setDraftName(e.target.value)}
+            onKeyDown={e => { if (e.key === 'Enter') void saveName(); if (e.key === 'Escape') { setEditName(false); setDraftName(name); } }} />
+          <button className="btn btn-primary btn-sm icon-only" disabled={busy} onClick={() => void saveName()} aria-label="Lưu tên"><Check size={15} /></button>
+          <button className="btn btn-ghost btn-sm icon-only" onClick={() => { setEditName(false); setDraftName(name); }} aria-label="Hủy"><X size={15} /></button>
+        </span>
+      : <span>{name}{canEdit && <button className="btn btn-ghost btn-sm icon-only" style={{ marginLeft: 6 }} title="Đổi tên vật tư" onClick={() => setEditName(true)}><Pencil size={14} /></button>}</span>}
+      footer={<>
       <button className="btn" onClick={onClose}>Đóng</button>
       {canRequest && <button className="btn btn-primary" onClick={() => request(best?.branch_id)}>
         <ArrowRightLeft size={16} /> Xin điều chuyển về {here?.name}</button>}
@@ -177,7 +200,7 @@ function ItemDetail({ row, onClose }: { row: StockRow; onClose: () => void }) {
       <div className="detail-grid">
         <div><small>Mã</small><b className="mono">{row.code}</b></div>
         <div><small>Nhóm</small><b>{row.group_name ?? '—'}</b></div>
-        <div><small>Đơn vị dùng</small><b>{row.unit}</b>{row.purchase_unit && <div className="small muted">1 {row.purchase_unit} = {fmtQty(row.purchase_factor)} {row.unit}</div>}</div>
+        <div><small>Đơn vị dùng</small>{canEdit ? <UnitInput value={unit} onCommit={u => void saveUnit(u)} disabled={busy} /> : <b>{unit}</b>}{row.purchase_unit && <div className="small muted">1 {row.purchase_unit} = {fmtQty(row.purchase_factor)} {row.unit}</div>}</div>
         <div><small>Tồn tại {here?.name}</small><b>{fmtQty(row.qty)}</b> <span className="muted small">dùng được {fmtQty(row.usable_qty)}</span></div>
         <div><small>Tối thiểu</small><b>{fmtQty(row.min_qty)}</b> <StockBadge usable={row.usable_qty} min={row.min_qty} /></div>
       </div>

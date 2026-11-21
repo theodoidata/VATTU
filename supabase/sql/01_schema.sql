@@ -139,6 +139,10 @@ create table if not exists receipt_docs (
   created_at    timestamptz not null default now()
 );
 
+-- Người / lúc sửa phiếu nhập gần nhất
+alter table receipt_docs add column if not exists updated_by uuid references profiles(id);
+alter table receipt_docs add column if not exists updated_at timestamptz;
+
 create table if not exists receipt_lines (
   id           bigserial primary key,
   doc_id       bigint not null references receipt_docs(id) on delete cascade,

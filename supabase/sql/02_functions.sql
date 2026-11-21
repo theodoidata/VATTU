@@ -577,6 +577,113 @@ begin
   return jsonb_build_object('id', v_doc);
 end $$;
 
+-- Đổi nhanh tên / đơn vị dùng của 1 vật tư (khung chi tiết vật tư, cột đơn vị ở Nhập kho).
+-- Chỉ đổi chữ hiển thị, không đổi số lượng tồn.
+create or replace function public.update_item_basic(p jsonb) returns jsonb
+language plpgsql security definer set search_path = public, app as $$
+declare
+  v_id   int := nullif(p->>'id', '')::int;
+  v_name text := nullif(trim(coalesce(p->>'name', '')), '');
+  v_unit text := nullif(trim(coalesce(p->>'unit', '')), '');
+begin
+  perform app.me();
+  perform app.require('inv_catalog_manage');
+  if p ? 'name' and v_name is null then raise exception 'Tên vật tư không được để trống.'; end if;
+  if p ? 'unit' and v_unit is null then raise exception 'Đơn vị tính không được để trống.'; end if;
+  update items set name = coalesce(v_name, name), unit = coalesce(v_unit, unit) where id = v_id;
+  if not found then raise exception 'Không tìm thấy vật tư.'; end if;
+  return (select jsonb_build_object('id', id, 'name', name, 'unit', unit) from items where id = v_id);
+end $$;
+
+-- Sửa phiếu nhập đã lưu (BGĐ / Kế toán). Tồn kho điều chỉnh theo CHÊNH LỆCH từng vật tư + lô:
+-- tăng thì cộng thêm, giảm thì trừ đúng lô đó (lô đã dùng / chuyển hết thì không cho giảm).
+create or replace function public.edit_receipt(p jsonb) returns jsonb
+language plpgsql security definer set search_path = public, app as $$
+declare
+  me      profiles := app.me();
+  d       receipt_docs;
+  v_date  date;
+  v_item  items;
+  v_qty   numeric;
+  v_unit  text;
+  v_lot   text;
+  v_lotid bigint;
+  v_have  numeric;
+  v_why   text;
+  v_new   jsonb := '[]'::jsonb;
+  l       record;
+begin
+  perform app.require('inv_receipt_edit');
+  select * into d from receipt_docs where id = nullif(p->>'id', '')::bigint for update;
+  if d.id is null then raise exception 'Không tìm thấy phiếu nhập.'; end if;
+  perform app.require_branch(d.branch_id);
+  v_date := coalesce(nullif(p->>'receipt_date', '')::date, d.receipt_date);
+  if v_date > app.today() then raise exception 'Không thể nhập kho cho ngày trong tương lai.'; end if;
+  if jsonb_array_length(coalesce(p->'lines', '[]'::jsonb)) = 0 then
+    raise exception 'Phiếu phải còn ít nhất 1 vật tư.';
+  end if;
+  v_why := 'Sửa phiếu nhập #' || d.id;
+
+  -- Dòng mới, quy về đơn vị dùng
+  for l in select * from jsonb_to_recordset(p->'lines')
+             as x(item_id int, qty numeric, unit_mode text, lot_no text, expiry_date date)
+  loop
+    select * into v_item from items where id = l.item_id;
+    if v_item.id is null then raise exception 'Dòng nhập kho chưa chọn vật tư.'; end if;
+    if l.qty is null or l.qty <= 0 then raise exception '% — số lượng phải lớn hơn 0.', app.item_label(v_item.id); end if;
+    if l.unit_mode = 'purchase' and v_item.purchase_unit is not null then
+      v_qty := l.qty * v_item.purchase_factor; v_unit := v_item.purchase_unit;
+    else
+      v_qty := l.qty; v_unit := v_item.unit;
+    end if;
+    v_lot := trim(coalesce(l.lot_no, ''));
+    if v_item.track_lot and (v_lot = '' or l.expiry_date is null) then
+      raise exception '% bắt buộc nhập số lô và hạn sử dụng.', app.item_label(v_item.id);
+    end if;
+    v_new := v_new || jsonb_build_object('item_id', v_item.id, 'qty', v_qty, 'input_qty', l.qty,
+                                         'input_unit', v_unit, 'lot_no', v_lot, 'expiry_date', l.expiry_date);
+  end loop;
+
+  -- Chênh lệch theo vật tư + lô + hạn dùng
+  for l in
+    with o as (select item_id, lot_no, expiry_date, sum(qty) q from receipt_lines where doc_id = d.id group by 1, 2, 3),
+         n as (select item_id, lot_no, expiry_date, sum(qty) q
+                 from jsonb_to_recordset(v_new) as x(item_id int, qty numeric, lot_no text, expiry_date date)
+                group by 1, 2, 3)
+    select coalesce(n.item_id, o.item_id) item_id, coalesce(n.lot_no, o.lot_no) lot_no,
+           coalesce(n.expiry_date, o.expiry_date) expiry_date, coalesce(n.q, 0) - coalesce(o.q, 0) delta
+      from o full join n on n.item_id = o.item_id and n.lot_no = o.lot_no
+                        and coalesce(n.expiry_date, '9999-12-31'::date) = coalesce(o.expiry_date, '9999-12-31'::date)
+  loop
+    if l.delta > 0 then
+      perform app.add_stock(d.branch_id, l.item_id, l.lot_no, l.expiry_date, l.delta, 'adjust', app.today(), v_why, 'receipt', d.id);
+    elsif l.delta < 0 then
+      v_lotid := null; v_have := null;
+      select id, qty into v_lotid, v_have from stock_lots
+       where branch_id = d.branch_id and item_id = l.item_id and lot_no = l.lot_no
+         and coalesce(expiry_date, '9999-12-31'::date) = coalesce(l.expiry_date, '9999-12-31'::date);
+      if v_lotid is null or v_have < -l.delta then
+        raise exception '% — lô % chỉ còn % trong kho (đã xuất dùng / chuyển đi), không giảm được %. Hãy dùng Kiểm kê để điều chỉnh.',
+          app.item_label(l.item_id), coalesce(nullif(l.lot_no, ''), '(không số lô)'), app.fmt(coalesce(v_have, 0)), app.fmt(-l.delta);
+      end if;
+      perform app.take_stock(d.branch_id, l.item_id, -l.delta, 'adjust', app.today(), v_why, 'receipt', d.id, v_lotid, true);
+    end if;
+  end loop;
+
+  delete from receipt_lines where doc_id = d.id;
+  insert into receipt_lines (doc_id, item_id, qty, input_qty, input_unit, lot_no, expiry_date)
+  select d.id, item_id, qty, input_qty, input_unit, lot_no, expiry_date
+    from jsonb_to_recordset(v_new) as x(item_id int, qty numeric, input_qty numeric, input_unit text, lot_no text, expiry_date date);
+  update receipt_docs
+     set receipt_date = v_date,
+         supplier = nullif(trim(coalesce(p->>'supplier', '')), ''),
+         note = nullif(p->>'note', ''),
+         source = coalesce(nullif(p->>'source', ''), source),
+         updated_by = me.id, updated_at = now()
+   where id = d.id;
+  return jsonb_build_object('ok', true, 'id', d.id);
+end $$;
+
 create or replace function public.list_receipts(p jsonb default '{}'::jsonb) returns jsonb
 language plpgsql stable security definer set search_path = public, app as $$
 declare
@@ -597,6 +704,7 @@ begin
     select coalesce(jsonb_agg(to_jsonb(d) || jsonb_build_object(
              'branch_name', app.branch_name(d.branch_id),
              'created_by_name', app.person(d.created_by),
+             'updated_by_name', app.person(d.updated_by),
              'lines', (select coalesce(jsonb_agg(to_jsonb(rl) || jsonb_build_object(
                                 'item_code', i.code, 'item_name', i.name, 'unit', i.unit,
                                 'group_name', g.name) order by rl.id), '[]'::jsonb)

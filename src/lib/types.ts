@@ -55,6 +55,7 @@ export type UsageDoc = {
 export type ReceiptDoc = {
   id: number; branch_id: number; branch_name: string; receipt_date: string; source: string; supplier: string | null;
   note: string | null; created_at: string; created_by_name: string | null;
+  updated_at: string | null; updated_by_name: string | null;
   lines: { id: number; item_id: number; item_code: string; item_name: string; unit: string; qty: number;
            input_qty: number; input_unit: string; lot_no: string; expiry_date: string | null }[];
 };

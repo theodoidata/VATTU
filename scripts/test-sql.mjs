@@ -29,7 +29,7 @@ const qty = async (b, code) => Number((await db.query(
   'select coalesce(sum(qty),0) q from stock_lots where branch_id=$1 and item_id=(select id from items where code=$2)', [b, code])).rows[0].q);
 
 await ok('get_session BGĐ có đủ quyền', async () => {
-  const s = await call(U(1), 'get_session'); assert(s.permissions.length === 19, 'perm ' + s.permissions.length); assert(s.branches.length === 11);
+  const s = await call(U(1), 'get_session'); assert(s.permissions.length === 20, 'perm ' + s.permissions.length); assert(s.branches.length === 11);
 });
 await ok('get_session kho Hạ Long', async () => {
   const s = await call(U(3), 'get_session'); assert(s.profile.branch_name === 'Hạ Long'); assert(!s.permissions.includes('inv_transfer_approve'));
@@ -123,6 +123,34 @@ await ok('Kiểm kê: tạo → đếm → nộp → chốt điều chỉnh tồ
   await call(U(5), 'stocktake_action', { id: st.id, action: 'approve' });
   const after = await q();
   assert(after === before - 1, `điều chỉnh sai ${before} → ${after}`);
+});
+
+await ok('Đổi tên / đơn vị vật tư (BGĐ)', async () => {
+  const id = await item('TT-LIDO');
+  const r = await call(U(1), 'update_item_basic', { id, name: 'Lidocain 2% (đổi tên)', unit: 'ống' });
+  assert(r.name === 'Lidocain 2% (đổi tên)' && r.unit === 'ống');
+});
+await err('Kho không được đổi tên vật tư', async () => call(U(3), 'update_item_basic', { id: await item('TT-LIDO'), name: 'x' }), 'quyền');
+await err('Không cho tên rỗng', async () => call(U(1), 'update_item_basic', { id: await item('TT-LIDO'), name: '  ' }), 'không được để trống');
+
+await ok('Sửa phiếu nhập: tăng / giảm / bỏ dòng, tồn điều chỉnh theo chênh lệch', async () => {
+  const a = await item('TT-LIDO'), b = await item('TT-MEPI');
+  const r = await call(U(2), 'record_receipt', { branch_id: 5, supplier: 'NCC A', lines: [
+    { item_id: a, qty: 5, unit_mode: 'base', lot_no: 'SUA1', expiry_date: '2030-01-01' },
+    { item_id: b, qty: 4, unit_mode: 'base', lot_no: 'SUA2', expiry_date: '2030-01-01' }] });
+  const docId = r.id ?? r.doc_id ?? (await db.query('select max(id) id from receipt_docs')).rows[0].id;
+  const lot = async (code, lotNo) => Number((await db.query("select coalesce(sum(qty),0) q from stock_lots where branch_id=5 and lot_no=$1 and item_id=(select id from items where code=$2)", [lotNo, code])).rows[0].q);
+  assert(await lot('TT-LIDO', 'SUA1') === 5 && await lot('TT-MEPI', 'SUA2') === 4, 'nhập ban đầu sai');
+  assert(await throws(() => call(U(2), 'edit_receipt', { id: docId, lines: [] })), 'QL chi nhánh không được sửa');
+  await call(U(1), 'edit_receipt', { id: docId, supplier: 'NCC B', lines: [{ item_id: a, qty: 8, unit_mode: 'base', lot_no: 'SUA1', expiry_date: '2030-01-01' }] });
+  assert(await lot('TT-LIDO', 'SUA1') === 8, 'tăng 5 → 8 chưa đúng');
+  assert(await lot('TT-MEPI', 'SUA2') === 0, 'bỏ dòng phải trừ hết lô SUA2');
+  const d = (await call(U(1), 'list_receipts', { branch_id: 5 })).find(x => x.id === docId);
+  assert(d.supplier === 'NCC B' && d.lines.length === 1 && d.updated_by_name, 'phiếu chưa cập nhật');
+  // dùng bớt 7 rồi giảm phiếu về 1 → kho chỉ còn 1, giảm 7 là không được
+  await call(U(3), 'record_usage', { branch_id: 5, lines: [{ item_id: a, qty: 7, reason: 'Điều trị', lot_id: (await db.query("select id from stock_lots where branch_id=5 and lot_no='SUA1'")).rows[0].id }] });
+  assert(await throws(() => call(U(1), 'edit_receipt', { id: docId, lines: [{ item_id: a, qty: 1, unit_mode: 'base', lot_no: 'SUA1', expiry_date: '2030-01-01' }] })), 'giảm quá số còn phải báo lỗi');
+  assert(await lot('TT-LIDO', 'SUA1') === 1, 'lỗi giữa chừng không được làm đổi tồn');
 });
 
 await ok('Cấp hàng chủ động: Hạ Long cấp cho Mạo Khê, trừ kho ngay, Mạo Khê nhận', async () => {
