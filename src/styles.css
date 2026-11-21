@@ -324,3 +324,8 @@ tr.current td { background: var(--td-color-selected); }
 .group-list li.active { background: var(--td-color-selected); color: var(--td-color-primary); font-weight: 600; }
 .group-list li.muted { cursor: default; }
 .group-list li em { font-style: normal; color: var(--td-text-muted); font-size: 12px; }
+
+/* Ô nhập số lượng + đơn vị: cố định độ rộng để các dòng thẳng hàng */
+.qty-cell { display: grid; grid-template-columns: 88px 44px; gap: 6px; align-items: center; justify-content: end; }
+.qty-cell .input { width: 100%; text-align: right; }
+.qty-cell span { text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }

@@ -139,7 +139,7 @@ function StocktakeDetail({ id, onBack }: { id: number; onBack: () => void }) {
         </div>
         {editable && !showSys && <p className="muted small" style={{ marginTop: 0 }}>Đang ẩn số sổ sách để đếm khách quan. Không còn hàng thì nhập 0.</p>}
         <><div className="table-wrap"><table className="data lines-table">
-          <thead><tr><th>Vật tư</th><th>Số lô</th><th>Hạn dùng</th>{showSystem && <th className="num">Sổ sách</th>}<th className="num" style={{ width: 120 }}>Thực đếm</th>{showSystem && <th className="num">Lệch</th>}<th>Ghi chú</th></tr></thead>
+          <thead><tr><th>Vật tư</th><th style={{ width: 120 }}>Số lô</th><th style={{ width: 110 }}>Hạn dùng</th>{showSystem && <th className="num" style={{ width: 90 }}>Sổ sách</th>}<th className="num" style={{ width: 150 }}>Thực đếm</th>{showSystem && <th className="num" style={{ width: 70 }}>Lệch</th>}<th style={{ width: '28%' }}>Ghi chú</th></tr></thead>
           <tbody>{pgL.shown.map(l => {
             const v = val(l); const d = v === '' ? null : Number(v) - Number(l.system_qty);
             return (
@@ -149,7 +149,7 @@ function StocktakeDetail({ id, onBack }: { id: number; onBack: () => void }) {
                 <td className="small" style={{ color: l.expiry_date && l.expiry_date < today ? 'var(--td-danger)' : undefined }}>{fmtDate(l.expiry_date)}</td>
                 {showSystem && <td className="num">{fmtQty(l.system_qty)}</td>}
                 <td className="num">{editable
-                  ? <div className="row" style={{ flexWrap: 'nowrap', gap: 4, justifyContent: 'flex-end' }}><input className="input sm" type="number" min={0} step="any" style={{ width: 76, textAlign: 'right' }} value={v} onChange={e => setCounts(c => ({ ...c, [l.id]: e.target.value }))} /><span className="muted small">{l.unit}</span></div>
+                  ? <div className="qty-cell"><input className="input sm" type="number" min={0} step="any" value={v} onChange={e => setCounts(c => ({ ...c, [l.id]: e.target.value }))} /><span className="muted small">{l.unit}</span></div>
                   : v === '' ? '—' : `${fmtQty(v)} ${l.unit}`}</td>
                 {showSystem && <td className="num">{d == null ? '' : d === 0 ? <span className="muted">0</span> : <b style={{ color: d < 0 ? 'var(--td-danger)' : 'var(--td-success)' }}>{d > 0 ? '+' : ''}{fmtQty(d)}</b>}</td>}
                 <td>{editable ? <input className="input sm" style={{ width: '100%' }} value={notes[l.id] ?? l.note ?? ''} onChange={e => setNotes(n => ({ ...n, [l.id]: e.target.value }))} /> : <span className="small">{l.note}</span>}</td>
@@ -162,7 +162,7 @@ function StocktakeDetail({ id, onBack }: { id: number; onBack: () => void }) {
               <td><input className="input sm" style={{ width: 100 }} value={x.lot_no} placeholder="Số lô" onChange={e => setExtra(es => es.map(y => y.key === x.key ? { ...y, lot_no: e.target.value } : y))} /></td>
               <td><input className="input sm" type="date" value={x.expiry_date} onChange={e => setExtra(es => es.map(y => y.key === x.key ? { ...y, expiry_date: e.target.value } : y))} /></td>
               {showSystem && <td className="num muted">mới</td>}
-              <td className="num"><input className="input sm" type="number" min={0} step="any" style={{ width: 76, textAlign: 'right' }} value={x.counted_qty} onChange={e => setExtra(es => es.map(y => y.key === x.key ? { ...y, counted_qty: e.target.value } : y))} /></td>
+              <td className="num"><div className="qty-cell"><input className="input sm" type="number" min={0} step="any" value={x.counted_qty} onChange={e => setExtra(es => es.map(y => y.key === x.key ? { ...y, counted_qty: e.target.value } : y))} /><span className="muted small">{items.data?.find(i => i.id === x.item_id)?.unit ?? ''}</span></div></td>
               {showSystem && <td />}
               <td><button className="btn btn-ghost btn-sm icon-only" onClick={() => setExtra(es => es.filter(y => y.key !== x.key))} aria-label="Xóa dòng"><Trash2 size={14} /></button></td>
             </tr>
