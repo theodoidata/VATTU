@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { Download } from 'lucide-react';
 import { useApp } from '../lib/app-context';
-import { Badge, BranchSelect, Empty, Loading, PageHeader, StockBadge, useRpc } from '../components/ui';
+import { Badge, BranchSelect, Empty, Loading, PageHeader, StockBadge, useRpc, usePaged } from '../components/ui';
 import { STOCK_LEVEL, TRANSFER_STATUS, addDays, fmtDate, fmtDateTime, fmtQty, norm, stockLevel } from '../lib/format';
 import type { MatrixRow, StockRow, Transfer, TransferStatus } from '../lib/types';
 import { exportExcel, sheet } from '../lib/excel';
@@ -45,6 +45,7 @@ function StockMatrix() {
     return (m.data ?? []).filter(r => (!group || r.group_id === group) && (!n || norm(r.name).includes(n) || norm(r.code).includes(n))
       && (!onlyAlert || branches.some(b => { const c = r.by_branch[String(b.id)]; return c && ['below', 'out'].includes(stockLevel(c.usable, c.min)) && Number(c.min) > 0; })));
   }, [m.data, q, group, onlyAlert, branches]);
+  const pg = usePaged(rows, [q, group, onlyAlert]);
   const cls = (c?: { usable: number; min: number }) => {
     if (!c) return '';
     const lv = stockLevel(c.usable, c.min);
@@ -68,14 +69,14 @@ function StockMatrix() {
         <span className="spacer" /><ExportBtn onClick={doExport} disabled={!rows.length} />
       </div>
       {m.loading ? <Loading /> : m.error ? <div className="notice danger">{m.error}</div> : !rows.length ? <Empty>Không có dữ liệu.</Empty> : (
-        <div className="table-wrap" style={{ maxHeight: '70vh' }}><table className="data matrix">
+        <><div className="table-wrap" style={{ maxHeight: '70vh' }}><table className="data matrix">
           <thead><tr><th>Vật tư</th><th>ĐVT</th>{branches.map(b => <th key={b.id} className="num">{b.name}</th>)}<th className="num">Tổng</th></tr></thead>
-          <tbody>{rows.map(r => (
+          <tbody>{pg.shown.map(r => (
             <tr key={r.id}><td><div className="item-name">{r.name}</div><div className="item-code">{r.code} · {r.group_name}</div></td><td className="small">{r.unit}</td>
               {branches.map(b => { const c = r.by_branch[String(b.id)]; return <td key={b.id} className={`num ${cls(c)}`} title={c ? `Còn dùng được ${fmtQty(c.usable)} · tối thiểu ${fmtQty(c.min)}` : ''}>{fmtQty(c?.qty)}</td>; })}
               <td className="num"><b>{fmtQty(branches.reduce((s, b) => s + Number(r.by_branch[String(b.id)]?.qty ?? 0), 0))}</b></td></tr>
           ))}</tbody>
-        </table></div>
+        </table></div>{pg.pager}</>
       )}
       <p className="muted small">Ô đỏ: dưới tối thiểu · ô vàng: sắp hết · ô xám: hết hàng. Di chuột vào ô để xem số còn dùng được và mức tối thiểu.</p>
     </>
@@ -86,6 +87,7 @@ function OwnStock() {
   const { session, today } = useApp();
   const s = useRpc<StockRow[]>('report_stock', {});
   const name = session.profile?.branch_name;
+  const pgO = usePaged(s.data ?? []);
   const doExport = () => exportExcel(`Ton-kho-${name}-${today}`, [sheet('Tồn ' + name, s.data ?? [], [
     { header: 'Mã', get: r => r.code, width: 12 }, { header: 'Vật tư', get: r => r.name, width: 40 }, { header: 'Nhóm', get: r => r.group_name, width: 22 },
     { header: 'ĐVT', get: r => r.unit, width: 8 }, { header: 'Tồn', get: r => Number(r.qty), width: 10 }, { header: 'Còn dùng được', get: r => Number(r.usable_qty), width: 14 },
@@ -95,10 +97,10 @@ function OwnStock() {
     <>
       <div className="toolbar"><span className="muted small">Tồn kho chi nhánh {name}</span><span className="spacer" /><ExportBtn onClick={doExport} disabled={!s.data?.length} /></div>
       {s.loading ? <Loading /> : s.error ? <div className="notice danger">{s.error}</div> : (
-        <div className="table-wrap"><table className="data">
+        <><div className="table-wrap"><table className="data">
           <thead><tr><th>Vật tư</th><th className="num">Tồn</th><th className="num">Còn dùng được</th><th className="num">Tối thiểu</th><th>Trạng thái</th></tr></thead>
-          <tbody>{(s.data ?? []).map(r => <tr key={r.id}><td><span className="item-name">{r.name}</span> <span className="item-code">{r.code}</span></td><td className="num">{fmtQty(r.qty)} {r.unit}</td><td className="num">{fmtQty(r.usable_qty)}</td><td className="num">{fmtQty(r.min_qty)}</td><td><StockBadge usable={r.usable_qty} min={r.min_qty} /></td></tr>)}</tbody>
-        </table></div>
+          <tbody>{pgO.shown.map(r => <tr key={r.id}><td><span className="item-name">{r.name}</span> <span className="item-code">{r.code}</span></td><td className="num">{fmtQty(r.qty)} {r.unit}</td><td className="num">{fmtQty(r.usable_qty)}</td><td className="num">{fmtQty(r.min_qty)}</td><td><StockBadge usable={r.usable_qty} min={r.min_qty} /></td></tr>)}</tbody>
+        </table></div>{pgO.pager}</>
       )}
     </>
   );
@@ -120,6 +122,7 @@ function TransferReport() {
   const t = useRpc<Transfer[]>('report_transfers', { from: r.from, to: r.to, branch_id: branch });
   const rows = (t.data ?? []).filter(x => !status || x.status === status);
   const flat = rows.flatMap(x => x.lines.map(l => ({ t: x, l })));
+  const pgT = usePaged(flat, [status, branch, r.from, r.to]);
   const doExport = () => exportExcel(`Lich-su-dieu-chuyen-${r.from}-${r.to}`, [sheet('Điều chuyển', flat, [
     { header: 'Mã phiếu', get: x => x.t.code, width: 16 }, { header: 'Ngày tạo', get: x => fmtDateTime(x.t.requested_at), width: 18 },
     { header: 'CN xin (A)', get: x => x.t.to_branch_name, width: 14 }, { header: 'CN cấp (B)', get: x => x.t.from_branch_name, width: 14 },
@@ -143,9 +146,9 @@ function TransferReport() {
         <span className="spacer" /><ExportBtn onClick={doExport} disabled={!flat.length} />
       </div>
       {t.loading ? <Loading /> : t.error ? <div className="notice danger">{t.error}</div> : !flat.length ? <Empty>Không có điều chuyển trong khoảng thời gian này.</Empty> : (
-        <div className="table-wrap"><table className="data">
+        <><div className="table-wrap"><table className="data">
           <thead><tr><th>Phiếu</th><th>A ← B</th><th>Vật tư</th><th className="num">Yêu cầu</th><th className="num">Duyệt</th><th>Trạng thái</th><th>Hoàn tất</th></tr></thead>
-          <tbody>{flat.map(({ t: x, l }) => (
+          <tbody>{pgT.shown.map(({ t: x, l }) => (
             <tr key={l.id}><td className="nowrap"><b className="mono">{x.code}</b><div className="item-code">{fmtDateTime(x.requested_at)}</div></td>
               <td className="small nowrap">{x.to_branch_name} ← {x.from_branch_name}</td>
               <td><span className="item-name">{l.item_name}</span></td>
@@ -153,7 +156,7 @@ function TransferReport() {
               <td><Badge tone={TRANSFER_STATUS[x.status].tone}>{TRANSFER_STATUS[x.status].label}</Badge></td>
               <td className="small">{x.received_at ? fmtDateTime(x.received_at) : x.closed_at ? fmtDateTime(x.closed_at) : '—'}</td></tr>
           ))}</tbody>
-        </table></div>
+        </table></div>{pgT.pager}</>
       )}
     </>
   );
@@ -180,6 +183,8 @@ function UsageReport() {
   }, [data]);
   const shownBranches = branch ? branches.filter(b => b.id === branch) : branches.filter(b => data.some(x => x.branch_id === b.id));
   const days = Math.max(1, Math.round((Date.parse(r.to) - Date.parse(r.from)) / 86400000) + 1);
+  const pgS = usePaged(sum, [branch, r.from, r.to]);
+  const pgD = usePaged(data, [branch, r.from, r.to]);
   const doExport = () => exportExcel(`Xuat-dung-${r.from}-${r.to}`, [
     sheet('Tổng hợp', sum, [
       { header: 'Mã', get: x => x.item_code, width: 12 }, { header: 'Vật tư', get: x => x.item_name, width: 40 }, { header: 'Nhóm', get: x => x.group_name, width: 22 }, { header: 'ĐVT', get: x => x.unit, width: 8 },
@@ -202,23 +207,23 @@ function UsageReport() {
         <span className="spacer" /><ExportBtn onClick={doExport} disabled={!data.length} />
       </div>
       {u.loading ? <Loading /> : u.error ? <div className="notice danger">{u.error}</div> : !data.length ? <Empty>Không có dữ liệu xuất dùng.</Empty> : view === 'sum' ? (
-        <div className="table-wrap"><table className="data">
+        <><div className="table-wrap"><table className="data">
           <thead><tr><th>Vật tư</th>{shownBranches.map(b => <th key={b.id} className="num">{b.name}</th>)}<th className="num">Tổng</th><th className="num">TB/ngày</th><th className="num">Hỏng/hủy</th></tr></thead>
-          <tbody>{sum.map(x => (
+          <tbody>{pgS.shown.map(x => (
             <tr key={x.item_id}><td><span className="item-name">{x.item_name}</span> <span className="item-code">{x.unit}</span></td>
               {shownBranches.map(b => <td key={b.id} className="num">{x.by[b.id] ? fmtQty(x.by[b.id]) : <span className="muted">·</span>}</td>)}
               <td className="num"><b>{fmtQty(x.total)}</b></td><td className="num">{fmtQty(x.total / days)}</td><td className="num">{x.waste ? fmtQty(x.waste) : ''}</td></tr>
           ))}</tbody>
-        </table></div>
+        </table></div>{pgS.pager}</>
       ) : (
-        <div className="table-wrap"><table className="data">
+        <><div className="table-wrap"><table className="data">
           <thead><tr><th>Ngày</th><th>Chi nhánh</th><th>Vật tư</th><th className="num">SL</th><th>Lý do</th><th>Lô</th><th>Người ghi</th></tr></thead>
-          <tbody>{data.map((x, i) => (
+          <tbody>{pgD.shown.map((x, i) => (
             <tr key={i}><td className="nowrap">{fmtDate(x.usage_date)}</td><td>{x.branch_name}</td><td><span className="item-name">{x.item_name}</span></td>
               <td className="num">{fmtQty(x.qty)} {x.unit}</td><td><Badge tone={x.reason === 'Điều trị' ? 'muted' : 'warning'}>{x.reason}</Badge></td>
               <td className="small mono">{x.lots.map(z => `${z.lot_no || '—'}×${fmtQty(z.qty)}`).join(', ')}</td><td className="small">{x.created_by_name}</td></tr>
           ))}</tbody>
-        </table></div>
+        </table></div>{pgD.pager}</>
       )}
       <p className="muted small">“TB/ngày” giúp đặt tồn tối thiểu: tối thiểu ≈ TB/ngày × (số ngày chờ hàng + 3).</p>
     </>

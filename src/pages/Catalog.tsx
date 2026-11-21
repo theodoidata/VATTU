@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { Plus, Download } from 'lucide-react';
 import { useApp } from '../lib/app-context';
-import { Badge, Empty, Field, Loading, Modal, PageHeader, useAction, useRpc } from '../components/ui';
+import { Badge, Empty, Field, Loading, Modal, PageHeader, useAction, useRpc, usePaged } from '../components/ui';
 import { fmtQty, norm } from '../lib/format';
 import type { Item } from '../lib/types';
 import { exportExcel, sheet } from '../lib/excel';
@@ -17,6 +17,7 @@ export default function CatalogPage() {
     const n = norm(q.trim());
     return (list.data ?? []).filter(i => (!group || i.group_id === group) && (!n || norm(i.name).includes(n) || norm(i.code).includes(n)));
   }, [list.data, q, group]);
+  const pg = usePaged(rows, [q, group]);
   const doExport = () => exportExcel('Danh-muc-vat-tu', [sheet('Danh mục', rows, [
     { header: 'Mã', get: i => i.code, width: 12 }, { header: 'Tên vật tư', get: i => i.name, width: 40 }, { header: 'Nhóm', get: i => i.group_name, width: 24 },
     { header: 'ĐV dùng', get: i => i.unit, width: 9 }, { header: 'ĐV nhập', get: i => i.purchase_unit ?? '', width: 9 }, { header: 'Quy đổi', get: i => Number(i.purchase_factor), width: 9 },
@@ -36,9 +37,9 @@ export default function CatalogPage() {
           <span className="muted small">{rows.length} vật tư</span>
         </div>
         {list.loading ? <Loading /> : list.error ? <div className="notice danger">{list.error}</div> : !rows.length ? <Empty>Chưa có vật tư.</Empty> : (
-          <div className="table-wrap"><table className="data">
+          <><div className="table-wrap"><table className="data">
             <thead><tr><th>Mã</th><th>Tên vật tư</th><th>Nhóm</th><th>ĐV dùng</th><th>ĐV nhập</th><th>Lô / HSD</th><th className="num">Tối thiểu mặc định</th><th>Riêng chi nhánh</th></tr></thead>
-            <tbody>{rows.map(i => (
+            <tbody>{pg.shown.map(i => (
               <tr key={i.id} className="clickable" onClick={() => setEditing(i)} style={i.active ? undefined : { opacity: .5 }}>
                 <td className="mono small">{i.code}</td><td className="item-name">{i.name}{!i.active && <> <Badge>Ngưng dùng</Badge></>}</td>
                 <td className="small">{i.group_name}</td><td>{i.unit}</td>
@@ -48,7 +49,7 @@ export default function CatalogPage() {
                 <td className="small">{Object.keys(i.mins).length ? `${Object.keys(i.mins).length} chi nhánh` : '—'}</td>
               </tr>
             ))}</tbody>
-          </table></div>
+          </table></div>{pg.pager}</>
         )}
       </section>
       {editing && <ItemModal item={editing === 'new' ? null : editing} onClose={() => setEditing(null)} />}

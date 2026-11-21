@@ -1,7 +1,7 @@
 import { Fragment, useMemo, useState } from 'react';
 import { ChevronDown, ChevronRight, Download, Pencil } from 'lucide-react';
 import { useApp } from '../lib/app-context';
-import { Empty, ExpiryBadge, Field, Loading, Modal, PageHeader, StockBadge, useAction, useRpc } from '../components/ui';
+import { Empty, ExpiryBadge, Field, Loading, Modal, PageHeader, StockBadge, useAction, useRpc, usePaged } from '../components/ui';
 import { EXPIRY_LEVEL, STOCK_LEVEL, fmtDate, fmtQty, norm, rowAlerts } from '../lib/format';
 import type { Lot, StockRow } from '../lib/types';
 import { handoff } from '../lib/handoff';
@@ -34,6 +34,7 @@ export default function StockPage() {
       return true;
     });
   }, [data, q, group, filter, today]);
+  const pg = usePaged(rows, [q, group, filter, showAll, branchId]);
 
   const counts = useMemo(() => {
     const c = { below: 0, expiry: 0, alert: 0 };
@@ -84,9 +85,9 @@ export default function StockPage() {
           <label className="check small"><input type="checkbox" checked={showAll} onChange={e => setShowAll(e.target.checked)} /> Hiện cả vật tư không có tồn</label>
         </div>
         {loading ? <Loading /> : error ? <div className="notice danger">{error}</div> : rows.length === 0 ? <Empty>{showAll ? 'Không có vật tư phù hợp.' : 'Không có vật tư phù hợp. Vật tư chưa có tồn đang được ẩn — tick “Hiện cả vật tư không có tồn” để xem.'}</Empty> : (
-          <div className="table-wrap"><table className="data">
+          <><div className="table-wrap"><table className="data">
             <thead><tr><th style={{ width: 28 }} /><th>Vật tư</th><th className="hide-sm">Nhóm</th><th className="num">Tồn</th><th className="num">Còn dùng được</th><th className="num">Tối thiểu</th><th>Trạng thái</th><th>Hạn gần nhất</th></tr></thead>
-            <tbody>{rows.map(r => {
+            <tbody>{pg.shown.map(r => {
               const isOpen = open.has(r.id);
               return (
                 <Fragment key={r.id}>
@@ -110,7 +111,7 @@ export default function StockPage() {
                 </Fragment>
               );
             })}</tbody>
-          </table></div>
+          </table></div>{pg.pager}</>
         )}
         <p className="muted small">
           Mức cảnh báo: <b>Sắp hết</b> khi còn dưới 1,5 lần tối thiểu · <b>Dưới tối thiểu</b> · <b>Hết hàng</b>.

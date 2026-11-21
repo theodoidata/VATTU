@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Plus, Trash2, Send, Check, X, PackageCheck, Truck, Lightbulb } from 'lucide-react';
 import { useApp, type AppCtx } from '../lib/app-context';
-import { Badge, Empty, Field, ItemPicker, Loading, Modal, PageHeader, ReasonModal, useAction, useRpc } from '../components/ui';
+import { Badge, Empty, Field, ItemPicker, Loading, Modal, PageHeader, ReasonModal, useAction, useRpc, usePaged } from '../components/ui';
 import { TRANSFER_STATUS, fmtDate, fmtDateTime, fmtQty } from '../lib/format';
 import type { Item, MatrixRow, Transfer } from '../lib/types';
 import { handoff } from '../lib/handoff';
@@ -35,6 +35,7 @@ export default function TransfersPage() {
   }), [all, app, branchId]);
   const rows = groups[tab];
   const open = all.find(t => t.id === openId) ?? null;
+  const pg = usePaged(rows, [tab, branchId]);
 
   return (
     <>
@@ -48,9 +49,9 @@ export default function TransfersPage() {
           ))}
         </div>
         {list.loading ? <Loading /> : list.error ? <div className="notice danger">{list.error}</div> : rows.length === 0 ? <Empty>Không có phiếu điều chuyển.</Empty> : (
-          <div className="table-wrap"><table className="data">
+          <><div className="table-wrap"><table className="data">
             <thead><tr><th>Mã phiếu</th><th>Chi nhánh xin (A)</th><th>Chi nhánh cấp (B)</th><th>Vật tư</th><th>Trạng thái</th><th>Ngày tạo</th><th>Người tạo</th></tr></thead>
-            <tbody>{rows.map(t => (
+            <tbody>{pg.shown.map(t => (
               <tr key={t.id} className="clickable" onClick={() => setOpenId(t.id)}>
                 <td><b className="mono">{t.code}</b>{transferNeedsMe(t, app) && <div><Badge tone="danger">Cần bạn xử lý</Badge></div>}</td>
                 <td>{t.to_branch_name}</td><td>{t.from_branch_name}</td>
@@ -59,7 +60,7 @@ export default function TransfersPage() {
                 <td className="small nowrap">{fmtDateTime(t.requested_at)}</td><td className="small">{t.requested_by_name}</td>
               </tr>
             ))}</tbody>
-          </table></div>
+          </table></div>{pg.pager}</>
         )}
       </section>
       {creating && <CreateModal onClose={() => { handoff.transferDraft = undefined; setCreating(false); }} onCreated={id => { setCreating(false); setOpenId(id); setTab('in'); }} />}

@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { Plus, ArrowLeft, Save, Send, CheckCheck, Undo2, Download, Trash2 } from 'lucide-react';
 import { useApp } from '../lib/app-context';
-import { Badge, Empty, Field, ItemPicker, Loading, Modal, PageHeader, useAction, useRpc } from '../components/ui';
+import { Badge, Empty, Field, ItemPicker, Loading, Modal, PageHeader, useAction, useRpc, usePaged } from '../components/ui';
 import { fmtDate, fmtDateTime, fmtQty, norm } from '../lib/format';
 import type { Item, Stocktake } from '../lib/types';
 import { exportExcel, sheet } from '../lib/excel';
@@ -23,6 +23,7 @@ export default function StocktakePage() {
   const [note, setNote] = useState('');
   const { run, busy } = useAction();
   const hasOpen = (list.data ?? []).some(s => s.status === 'draft' || s.status === 'submitted');
+  const pg = usePaged(list.data ?? [], branchId);
 
   if (openId) return <StocktakeDetail id={openId} onBack={() => setOpenId(null)} />;
   return (
@@ -32,9 +33,9 @@ export default function StocktakePage() {
         actions={has('inv_stocktake_count') && canAct(branchId) && <button className="btn btn-primary" disabled={hasOpen} title={hasOpen ? 'Đang có phiếu chưa chốt' : ''} onClick={() => setCreating(true)}><Plus size={16} /> Tạo phiếu kiểm kê</button>} />
       <section className="panel">
         {list.loading ? <Loading /> : list.error ? <div className="notice danger">{list.error}</div> : !list.data?.length ? <Empty>Chưa có phiếu kiểm kê nào.</Empty> : (
-          <div className="table-wrap"><table className="data">
+          <><div className="table-wrap"><table className="data">
             <thead><tr><th>Phiếu</th><th>Phạm vi</th><th>Trạng thái</th><th className="num">Đã đếm</th><th className="num">Dòng lệch</th><th>Tạo bởi</th><th>Chốt bởi</th></tr></thead>
-            <tbody>{list.data.map(s => (
+            <tbody>{pg.shown.map(s => (
               <tr key={s.id} className="clickable" onClick={() => setOpenId(s.id)}>
                 <td><b>KK #{s.id}</b><div className="item-code">{fmtDateTime(s.created_at)}{s.note ? ' · ' + s.note : ''}</div></td>
                 <td>{s.group_name ?? 'Toàn bộ vật tư'}</td>
@@ -45,7 +46,7 @@ export default function StocktakePage() {
                 <td className="small">{s.approved_by_name ? <>{s.approved_by_name}<div className="item-code">{fmtDateTime(s.approved_at)}</div></> : '—'}</td>
               </tr>
             ))}</tbody>
-          </table></div>
+          </table></div>{pg.pager}</>
         )}
       </section>
       {creating && <Modal title="Tạo phiếu kiểm kê" size="narrow" onClose={() => setCreating(false)} footer={<>
@@ -86,6 +87,7 @@ function StocktakeDetail({ id, onBack }: { id: number; onBack: () => void }) {
   const counted = lines.filter(l => val(l) !== '').length;
   const diffs = lines.filter(l => val(l) !== '' && Number(val(l)) !== Number(l.system_qty));
   const showSystem = showSys || !editable;
+  const pgL = usePaged(filtered, q);
 
   const payload = (submit: boolean) => ({
     id, submit,
@@ -136,9 +138,9 @@ function StocktakeDetail({ id, onBack }: { id: number; onBack: () => void }) {
           <span className="muted small">Đã đếm {counted}/{lines.length} · lệch {diffs.length}</span>
         </div>
         {editable && !showSys && <p className="muted small" style={{ marginTop: 0 }}>Đang ẩn số sổ sách để đếm khách quan. Không còn hàng thì nhập 0.</p>}
-        <div className="table-wrap"><table className="data lines-table">
+        <><div className="table-wrap"><table className="data lines-table">
           <thead><tr><th>Vật tư</th><th>Số lô</th><th>Hạn dùng</th>{showSystem && <th className="num">Sổ sách</th>}<th className="num" style={{ width: 120 }}>Thực đếm</th>{showSystem && <th className="num">Lệch</th>}<th>Ghi chú</th></tr></thead>
-          <tbody>{filtered.map(l => {
+          <tbody>{pgL.shown.map(l => {
             const v = val(l); const d = v === '' ? null : Number(v) - Number(l.system_qty);
             return (
               <tr key={l.id}>
@@ -165,7 +167,7 @@ function StocktakeDetail({ id, onBack }: { id: number; onBack: () => void }) {
               <td><button className="btn btn-ghost btn-sm icon-only" onClick={() => setExtra(es => es.filter(y => y.key !== x.key))} aria-label="Xóa dòng"><Trash2 size={14} /></button></td>
             </tr>
           ))}</tbody>
-        </table></div>
+        </table></div>{pgL.pager}</>
         {editable && <button className="btn btn-sm" style={{ marginTop: 8 }} onClick={() => setExtra(es => [...es, { key: seq++, item_id: null, lot_no: '', expiry_date: '', counted_qty: '' }])}><Plus size={14} /> Thêm vật tư / lô tìm thấy ngoài danh sách</button>}
       </section>
     </>

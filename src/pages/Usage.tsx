@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { Plus, Trash2, Save, Ban } from 'lucide-react';
 import { useApp } from '../lib/app-context';
-import { Badge, Empty, Field, ItemPicker, Loading, PageHeader, ReasonModal, useAction, useRpc } from '../components/ui';
+import { Badge, Empty, Field, ItemPicker, Loading, PageHeader, ReasonModal, useAction, useRpc, usePaged } from '../components/ui';
 import { USAGE_REASONS, addDays, fmtDate, fmtDateTime, fmtQty } from '../lib/format';
 import type { StockRow, UsageDoc } from '../lib/types';
 
@@ -22,6 +22,7 @@ export default function UsagePage() {
   const [lines, setLines] = useState<Line[]>([newLine()]);
   const [voiding, setVoiding] = useState<UsageDoc | null>(null);
   const { run, busy } = useAction();
+  const pg = usePaged(docs.data ?? [], [branchId, from, to]);
 
   const byId = useMemo(() => new Map((stock.data ?? []).map(r => [r.id, r])), [stock.data]);
   const pickItems = useMemo(() => (stock.data ?? []).map(r => ({
@@ -92,9 +93,9 @@ export default function UsagePage() {
           <div className="row"><input className="input sm" type="date" value={from} onChange={e => setFrom(e.target.value)} /> → <input className="input sm" type="date" value={to} onChange={e => setTo(e.target.value)} /></div>
         </div>
         {docs.loading ? <Loading /> : docs.error ? <div className="notice danger">{docs.error}</div> : !docs.data?.length ? <Empty>Chưa có phiếu xuất trong khoảng ngày này.</Empty> : (
-          <div className="table-wrap"><table className="data">
+          <><div className="table-wrap"><table className="data">
             <thead><tr><th>Ngày</th><th>Vật tư</th><th className="num">SL</th><th>Lý do</th><th>Lô đã trừ</th><th>Người ghi</th><th /></tr></thead>
-            <tbody>{docs.data.flatMap(d => d.lines.map((ln, i) => (
+            <tbody>{pg.shown.flatMap(d => d.lines.map((ln, i) => (
               <tr key={ln.id} style={d.voided_at ? { opacity: .5, textDecoration: 'line-through' } : undefined}>
                 {i === 0 && <td rowSpan={d.lines.length} className="nowrap">{fmtDate(d.usage_date)}<div className="item-code">#{d.id}{d.note ? ' · ' + d.note : ''}</div></td>}
                 <td><span className="item-name">{ln.item_name}</span> <span className="item-code">{ln.item_code}</span></td>
@@ -107,7 +108,7 @@ export default function UsagePage() {
                   <button className="btn btn-danger btn-sm" onClick={() => setVoiding(d)}><Ban size={14} /> Hủy phiếu</button>}</td>}
               </tr>
             )))}</tbody>
-          </table></div>
+          </table></div>{pg.pager}</>
         )}
       </section>
       {voiding && <ReasonModal title={`Hủy phiếu xuất #${voiding.id}`} label="Lý do hủy" confirmText="Hủy phiếu & hoàn tồn" tone="danger" busy={busy}

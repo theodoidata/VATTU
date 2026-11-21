@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { Plus, Trash2, Save } from 'lucide-react';
 import { useApp } from '../lib/app-context';
-import { Empty, Field, ItemPicker, Loading, PageHeader, useAction, useRpc } from '../components/ui';
+import { Empty, Field, ItemPicker, Loading, PageHeader, useAction, useRpc, usePaged } from '../components/ui';
 import { addDays, fmtDate, fmtDateTime, fmtQty } from '../lib/format';
 import type { Item, ReceiptDoc } from '../lib/types';
 
@@ -23,6 +23,7 @@ export default function ReceiptPage() {
   const [note, setNote] = useState('');
   const [lines, setLines] = useState<Line[]>([newLine()]);
   const { run, busy } = useAction();
+  const pg = usePaged(docs.data ?? [], [branchId, from, to]);
 
   const active = useMemo(() => (items.data ?? []).filter(i => i.active), [items.data]);
   const byId = useMemo(() => new Map(active.map(i => [i.id, i])), [active]);
@@ -90,9 +91,9 @@ export default function ReceiptPage() {
           <div className="row"><input className="input sm" type="date" value={from} onChange={e => setFrom(e.target.value)} /> → <input className="input sm" type="date" value={to} onChange={e => setTo(e.target.value)} /></div>
         </div>
         {docs.loading ? <Loading /> : docs.error ? <div className="notice danger">{docs.error}</div> : !docs.data?.length ? <Empty>Chưa có phiếu nhập.</Empty> : (
-          <div className="table-wrap"><table className="data">
+          <><div className="table-wrap"><table className="data">
             <thead><tr><th>Ngày</th><th>Nguồn</th><th>Vật tư</th><th className="num">SL nhập</th><th className="num">Quy ra</th><th>Lô</th><th>Hạn dùng</th><th>Người nhập</th></tr></thead>
-            <tbody>{docs.data.flatMap(d => d.lines.map((ln, i) => (
+            <tbody>{pg.shown.flatMap(d => d.lines.map((ln, i) => (
               <tr key={ln.id}>
                 {i === 0 && <td rowSpan={d.lines.length} className="nowrap">{fmtDate(d.receipt_date)}<div className="item-code">#{d.id}</div></td>}
                 {i === 0 && <td rowSpan={d.lines.length} className="small">{d.source}{d.supplier ? <div className="item-code">{d.supplier}</div> : null}{d.note ? <div className="item-code">{d.note}</div> : null}</td>}
@@ -103,7 +104,7 @@ export default function ReceiptPage() {
                 {i === 0 && <td rowSpan={d.lines.length} className="small">{d.created_by_name}<div className="item-code">{fmtDateTime(d.created_at)}</div></td>}
               </tr>
             )))}</tbody>
-          </table></div>
+          </table></div>{pg.pager}</>
         )}
       </section>
     </>

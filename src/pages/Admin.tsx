@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Plus, Save, UserCog, Info } from 'lucide-react';
 import { useApp } from '../lib/app-context';
-import { Badge, Empty, Field, Loading, Modal, PageHeader, Switch, useAction, useRpc } from '../components/ui';
+import { Badge, Empty, Field, Loading, Modal, PageHeader, Switch, useAction, useRpc, usePaged } from '../components/ui';
 import { norm } from '../lib/format';
 import type { Profile } from '../lib/types';
 
@@ -37,14 +37,15 @@ function Users() {
   useEffect(() => { backend.rpc<PermData>('admin_get_permissions').then(d => setDepts(d.departments)).catch(() => {}); }, [backend]);
   const rows = useMemo(() => { const n = norm(q.trim()); return (users.data ?? []).filter(u => !n || norm(u.full_name).includes(n) || norm(u.email ?? '').includes(n)); }, [users.data, q]);
   const pending = rows.filter(u => !u.active).length;
+  const pg = usePaged(rows, q);
   return (
     <>
       <div className="notice"><Info size={14} style={{ verticalAlign: -2 }} /> <b>Thêm nhân viên:</b> vào Supabase → <b>Authentication → Users → Add user</b> (nhập email + mật khẩu, tick “Auto Confirm User”). Tài khoản sẽ hiện ở đây với trạng thái <i>Chờ kích hoạt</i> — bấm “Sửa” để gán vị trí, chi nhánh và kích hoạt.</div>
       <div className="toolbar"><input className="input" placeholder="Tìm nhân viên…" value={q} onChange={e => setQ(e.target.value)} />{pending > 0 && <Badge tone="warning">{pending} tài khoản chờ kích hoạt</Badge>}</div>
       {users.loading ? <Loading /> : users.error ? <div className="notice danger">{users.error}</div> : !rows.length ? <Empty>Chưa có nhân viên.</Empty> : (
-        <div className="table-wrap"><table className="data">
+        <><div className="table-wrap"><table className="data">
           <thead><tr><th>Nhân viên</th><th>Bộ phận / Vị trí</th><th>Chi nhánh</th><th>Trạng thái</th><th>Quyền riêng</th><th /></tr></thead>
-          <tbody>{rows.map(u => (
+          <tbody>{pg.shown.map(u => (
             <tr key={u.id}>
               <td><div className="item-name">{u.full_name || '(chưa đặt tên)'}{u.id === session.profile?.id && <> <Badge tone="primary">Bạn</Badge></>}</div><div className="item-code">{u.email}</div></td>
               <td>{u.department_name ?? <span className="muted">—</span>}</td>
@@ -55,7 +56,7 @@ function Users() {
                 {has('admin_permissions') && <button className="btn btn-sm" onClick={() => setPermUser(u)}><UserCog size={14} /> Quyền riêng</button>}</td>
             </tr>
           ))}</tbody>
-        </table></div>
+        </table></div>{pg.pager}</>
       )}
       {editing && <UserModal u={editing} depts={depts} branches={branches} onClose={() => setEditing(null)} />}
       {permUser && <UserPermModal u={permUser} onClose={() => setPermUser(null)} />}

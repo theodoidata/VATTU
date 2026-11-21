@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { X, Loader2 } from 'lucide-react';
+import { X, Loader2, ChevronLeft, ChevronRight } from 'lucide-react';
 import { useApp } from '../lib/app-context';
 import { EXPIRY_LEVEL, STOCK_LEVEL, expiryLevel, fmtDate, norm, stockLevel } from '../lib/format';
 
@@ -212,5 +212,53 @@ export function BranchSelect({ value, onChange, includeAll, onlyActable, classNa
       {includeAll && <option value="">{includeAll}</option>}
       {branches.filter(b => !onlyActable || canAct(b.id)).map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
     </select>
+  );
+}
+
+/* ---------------- Phân trang dùng chung: 20 / 50 / 100 dòng, nhớ lựa chọn cho cả hệ thống ---------------- */
+const PAGE_SIZES = [20, 50, 100] as const;
+const SIZE_KEY = 'kho-page-size';
+const readSize = () => { try { const n = Number(localStorage.getItem(SIZE_KEY)); return (PAGE_SIZES as readonly number[]).includes(n) ? n : 20; } catch { return 20; } };
+let sharedSize = readSize();
+const sizeListeners = new Set<(n: number) => void>();
+function setSharedSize(n: number) {
+  sharedSize = n;
+  try { localStorage.setItem(SIZE_KEY, String(n)); } catch { /* trình duyệt chặn lưu → chỉ áp dụng phiên này */ }
+  sizeListeners.forEach(f => f(n));
+}
+
+/** Chia `rows` thành trang. Về trang 1 khi `resetKey` đổi (bộ lọc, tìm kiếm…); mặc định theo số dòng. */
+export function usePaged<T>(rows: readonly T[], resetKey?: unknown) {
+  const [size, setSize] = useState(sharedSize);
+  const [page, setPage] = useState(1);
+  useEffect(() => { sizeListeners.add(setSize); return () => { sizeListeners.delete(setSize); }; }, []);
+  const rk = resetKey === undefined ? rows.length : JSON.stringify(resetKey);
+  useEffect(() => { setPage(1); }, [rk, size]);
+  const pages = Math.max(1, Math.ceil(rows.length / size));
+  const cur = Math.min(page, pages);
+  const shown = useMemo(() => rows.slice((cur - 1) * size, cur * size), [rows, cur, size]);
+  const pager = rows.length > PAGE_SIZES[0]
+    ? <Pager total={rows.length} page={cur} pages={pages} size={size} onPage={setPage} />
+    : null;
+  return { shown, pager };
+}
+
+function Pager({ total, page, pages, size, onPage }: { total: number; page: number; pages: number; size: number; onPage: (p: number) => void }) {
+  const from = (page - 1) * size + 1, to = Math.min(total, page * size);
+  return (
+    <div className="pager">
+      <label className="small muted">Hiển thị{' '}
+        <select className="select sm" value={size} onChange={e => setSharedSize(Number(e.target.value))}>
+          {PAGE_SIZES.map(n => <option key={n} value={n}>{n}</option>)}
+        </select>{' '}dòng
+      </label>
+      <span className="small muted">{from}–{to} / {total}</span>
+      <span className="spacer" />
+      <button className="btn btn-sm icon-only" disabled={page <= 1} onClick={() => onPage(page - 1)} aria-label="Trang trước"><ChevronLeft size={16} /></button>
+      <select className="select sm" value={page} onChange={e => onPage(Number(e.target.value))} aria-label="Chọn trang">
+        {Array.from({ length: pages }, (_, i) => <option key={i} value={i + 1}>{i + 1}/{pages}</option>)}
+      </select>
+      <button className="btn btn-sm icon-only" disabled={page >= pages} onClick={() => onPage(page + 1)} aria-label="Trang sau"><ChevronRight size={16} /></button>
+    </div>
   );
 }
