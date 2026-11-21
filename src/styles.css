@@ -332,6 +332,7 @@ tr.current td { background: var(--td-color-selected); }
 
 /* Popup rất rộng (phiếu xin điều chuyển có cột từng chi nhánh) */
 .modal.xwide { width: min(1440px, 100%); }
+.modal { max-width: 100%; min-width: 0; }
 .transfer-lines th.br-col, .transfer-lines td.br-col { width: 64px; min-width: 56px; padding-left: 4px; padding-right: 4px; font-size: 12px; }
 .transfer-lines th.br-col { white-space: normal; line-height: 1.2; text-align: center; }
 .transfer-lines td.br-col { text-align: center; }
@@ -352,3 +353,5 @@ table.data.fixed-cols th { white-space: normal; line-height: 1.25; }
 .qty-pack { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
 .qty-pack .input { width: 52px; padding-left: 6px; padding-right: 6px; }
 .qty-pack .qp-u { font-size: 12px; color: var(--td-text-muted); min-width: 22px; }
+.select.unit-box { width: 84px; }
+.select.unit-box:disabled { opacity: 1; color: var(--td-text); background-color: var(--td-surface-2); cursor: default; }

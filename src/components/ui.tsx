@@ -371,12 +371,28 @@ export function useUnits() {
 }
 
 /** Ô số lượng theo vật tư (tự tra quy đổi trong danh mục): 2 ô hộp/sợi hoặc 1 ô + tên đơn vị */
-export function ItemQtyInput({ itemId, unit, value, onChange, bad, max }: { itemId: number | null | undefined; unit?: string; value: string; onChange: (v: string) => void; bad?: boolean; max?: number }) {
+export function ItemQtyInput({ itemId, unit, value, onChange, bad, max, showUnit }: { itemId: number | null | undefined; unit?: string; value: string; onChange: (v: string) => void; bad?: boolean; max?: number; showUnit?: boolean }) {
   const map = useUnitMap();
   const u = itemId ? map.get(itemId) ?? (unit ? { unit } : null) : null;
   if (hasPack(u)) return <QtyInput value={value} onChange={onChange} unit={u} bad={bad} max={max} />;
-  return <div className="qty-cell"><input className="input sm" type="number" min={0} max={max} step="any" value={value} onChange={e => onChange(e.target.value)}
-    style={bad ? { borderColor: 'var(--td-danger)' } : undefined} /><span className="muted small">{u?.unit ?? unit ?? ''}</span></div>;
+  const box = <input className="input sm num" type="number" min={0} max={max} step="any" value={value} onChange={e => onChange(e.target.value)}
+    style={{ width: 80, textAlign: 'right', ...(bad ? { borderColor: 'var(--td-danger)' } : {}) }} />;
+  return showUnit ? <span className="nowrap">{box} <span className="muted small">{u?.unit ?? unit ?? ''}</span></span> : box;
+}
+
+/** Ô "Đơn vị" của một dòng phiếu: luôn hiện sẵn ô (chưa chọn vật tư thì để trống).
+    Vật tư có quy đổi: ghi "1 hộp = 10 sợi". Người sửa được danh mục: đổi đơn vị ngay tại đây. */
+export function UnitCell({ itemId, unit }: { itemId: number | null | undefined; unit?: string }) {
+  const { has } = useApp();
+  const map = useUnitMap();
+  const { run, busy } = useAction();
+  const it = itemId ? map.get(itemId) as (UnitInfo & { id?: number; name?: string }) | undefined : undefined;
+  const u = it ?? (itemId && unit ? { unit } : null);
+  if (!u) return <select className="select sm unit-box" disabled aria-label="Đơn vị"><option /></select>;
+  if (hasPack(u)) return <span className="small muted nowrap">1 {u.purchase_unit} = {fmtQty(u.purchase_factor)} {u.unit}</span>;
+  if (it && has('inv_catalog_manage')) return <UnitInput value={u.unit} disabled={busy}
+    onCommit={v => void run('update_item_basic', { id: itemId, unit: v }, `Đã đổi đơn vị “${it.name ?? ''}”: ${u.unit} → ${v}`)} />;
+  return <select className="select sm unit-box" disabled value={u.unit} aria-label="Đơn vị"><option value={u.unit}>{u.unit}</option></select>;
 }
 
 /** Ô số lượng: vật tư có quy đổi thì hiện 2 ô [__] hộp [__] sợi, giá trị luôn là tổng theo đơn vị nhỏ. */

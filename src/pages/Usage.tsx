@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { Plus, Trash2, Save, Ban, Clock, X } from 'lucide-react';
 import { useApp } from '../lib/app-context';
-import { Badge, Empty, Field, ItemPicker, Loading, PageHeader, QtyInput, ReasonModal, readDraft, useAction, useFormDraft, useRpc, usePaged, useUnits } from '../components/ui';
+import { Badge, Empty, Field, ItemPicker, Loading, PageHeader, QtyInput, ReasonModal, UnitCell, readDraft, useAction, useFormDraft, useRpc, usePaged, useUnits } from '../components/ui';
 import { USAGE_REASONS, addDays, fmtDate, fmtDateTime, fmtUnits } from '../lib/format';
 import type { StockRow, UsageDoc } from '../lib/types';
 
@@ -65,7 +65,7 @@ export default function UsagePage() {
             <Field label="Ghi chú (không bắt buộc)"><input className="input" value={note} onChange={e => setNote(e.target.value)} placeholder="VD: ca chiều, ghế 2…" /></Field>
           </div>
           <div className="table-wrap stack-sm"><table className="data lines-table">
-            <thead><tr><th style={{ minWidth: 260 }}>Vật tư</th><th style={{ width: 120 }}>Số lượng</th><th style={{ width: 160 }}>Lý do</th><th style={{ minWidth: 170 }}>Lô</th><th style={{ width: 40 }} /></tr></thead>
+            <thead><tr><th style={{ minWidth: 260 }}>Vật tư</th><th style={{ width: 150 }}>Số lượng</th><th style={{ width: 100 }}>Đơn vị</th><th style={{ width: 160 }}>Lý do</th><th style={{ minWidth: 170 }}>Lô</th><th style={{ width: 40 }} /></tr></thead>
             <tbody>{lines.map(l => {
               const r = l.item_id ? byId.get(l.item_id) : undefined;
               const expiredMode = l.reason === 'Hủy hết hạn';
@@ -76,7 +76,8 @@ export default function UsagePage() {
                   <td><ItemPicker items={pickItems} value={l.item_id} onChange={id => set(l.key, { item_id: id, lot_id: null })}
                     exclude={lines.filter(x => x.key !== l.key && x.reason === l.reason).map(x => x.item_id!).filter(Boolean)} />
                     {over && <div className="small" style={{ color: 'var(--td-danger)' }}>Vượt tồn còn dùng được ({fmtUnits(expiredMode ? r!.qty : r!.usable_qty, r)})</div>}</td>
-                  <td><div className="row" style={{ flexWrap: 'nowrap', gap: 4 }}><QtyInput value={l.qty} onChange={v => set(l.key, { qty: v })} unit={r} width={70} />{!(r?.purchase_unit && Number(r.purchase_factor) > 1) && <span className="muted small">{r?.unit}</span>}</div></td>
+                  <td><QtyInput value={l.qty} onChange={v => set(l.key, { qty: v })} unit={r} width={80} /></td>
+                  <td><UnitCell itemId={l.item_id} unit={r?.unit} /></td>
                   <td><select className="select sm" value={l.reason} onChange={e => set(l.key, { reason: e.target.value, lot_id: null })}>{USAGE_REASONS.map(x => <option key={x}>{x}</option>)}</select></td>
                   <td>{r && r.lots.length > 0 ? (
                     <select className="select sm" value={l.lot_id ?? ''} onChange={e => set(l.key, { lot_id: e.target.value ? Number(e.target.value) : null })} style={{ width: '100%' }}>

@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { Plus, Trash2, Save, Pencil, Clock, X } from 'lucide-react';
 import { useApp } from '../lib/app-context';
-import { Empty, Field, ItemPicker, Loading, Modal, PageHeader, QtyInput, UnitInput, readDraft, useAction, useFormDraft, useRpc, usePaged, useUnits } from '../components/ui';
+import { Empty, Field, ItemPicker, Loading, Modal, PageHeader, QtyInput, UnitCell, UnitInput, readDraft, useAction, useFormDraft, useRpc, usePaged, useUnits } from '../components/ui';
 import { addDays, fmtDate, fmtDateTime, fmtQty, hasPack } from '../lib/format';
 import type { Item, ReceiptDoc } from '../lib/types';
 
@@ -55,13 +55,13 @@ function LinesEditor({ lines, setLines, date }: { lines: Line[]; setLines: (f: (
               // Vật tư có quy đổi: 2 ô [hộp] [sợi], lưu thành tổng số sợi
               ? <QtyInput value={l.qty === '' ? '' : String(base)} onChange={v => set(l.key, { qty: v, unit_mode: 'base' })} unit={it} />
               : <input className="input sm" type="number" min={0} step="any" style={{ width: 80, textAlign: 'right' }} value={l.qty} onChange={e => set(l.key, { qty: e.target.value })} />}</td>
-            <td>{!it ? null : pack ? <span className="small muted">1 {it.purchase_unit} = {fmtQty(it.purchase_factor)} {it.unit}</span> : it.purchase_unit ? (
+            <td>{!it ? <UnitCell itemId={null} /> : pack ? <span className="small muted">1 {it.purchase_unit} = {fmtQty(it.purchase_factor)} {it.unit}</span> : it.purchase_unit ? (
               <select className="select sm" value={l.unit_mode} onChange={e => set(l.key, { unit_mode: e.target.value as Line['unit_mode'] })}>
                 <option value="purchase">{it.purchase_unit}</option><option value="base">{it.unit}</option>
               </select>
             ) : canUnit ? (
               <UnitInput value={it.unit} onCommit={u => void run('update_item_basic', { id: it.id, unit: u }, `Đã đổi đơn vị “${it.name}”: ${it.unit} → ${u}`)} />
-            ) : <span className="muted">{it.unit}</span>}</td>
+            ) : <UnitCell itemId={it.id} unit={it.unit} />}</td>
             <td><input className="input sm" style={{ width: '100%', borderColor: need && !l.lot_no.trim() && l.qty ? 'var(--td-danger)' : undefined }} value={l.lot_no} onChange={e => set(l.key, { lot_no: e.target.value })} placeholder={need ? 'Bắt buộc' : 'Không bắt buộc'} /></td>
             <td><input className="input sm" type="date" style={{ width: '100%', borderColor: need && !l.expiry_date && l.qty ? 'var(--td-danger)' : undefined }} value={l.expiry_date} min={date} onChange={e => set(l.key, { expiry_date: e.target.value })} /></td>
             <td className="num">{it ? <>{fmtQty(base)} <span className="muted">{it.unit}</span></> : ''}</td>

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Plus, Trash2, Send, Check, X, PackageCheck, Truck, Lightbulb } from 'lucide-react';
 import { useApp, type AppCtx } from '../lib/app-context';
-import { Badge, Empty, Field, ItemPicker, ItemQtyInput, Loading, Modal, PageHeader, ReasonModal, useAction, useRpc, usePaged, useUnits } from '../components/ui';
+import { Badge, Empty, Field, ItemPicker, ItemQtyInput, Loading, UnitCell, Modal, PageHeader, ReasonModal, useAction, useRpc, usePaged, useUnits } from '../components/ui';
 import { TRANSFER_STATUS, fmtDate, fmtDateTime, fmtQty, fmtUnits } from '../lib/format';
 import type { Item, MatrixRow, StockRow, Transfer, TransferLine } from '../lib/types';
 import { handoff } from '../lib/handoff';
@@ -147,8 +147,8 @@ function CreateModal({ onClose, onCreated }: { onClose: () => void; onCreated: (
     </>}>
       <div className="table-wrap"><table className="data lines-table transfer-lines">
         <thead><tr>
-          <th style={{ minWidth: 220 }}>Vật tư cần</th><th className="num" style={{ width: 170 }}>Số lượng</th>
-          <th style={{ width: 150 }}>Xin từ chi nhánh</th><th style={{ width: 40 }} />
+          <th style={{ minWidth: 200 }}>Vật tư cần</th><th className="num" style={{ width: 110 }}>Số lượng</th><th style={{ width: 96 }}>Đơn vị</th>
+          <th style={{ width: 130 }}>Xin từ chi nhánh</th><th style={{ width: 40 }} />
           {canViewAll && others.map(b => <th key={b.id} className="num br-col" title={`Còn dùng được ở ${b.name}`}>{b.name}</th>)}
         </tr></thead>
         <tbody>{lines.map(l => {
@@ -157,6 +157,7 @@ function CreateModal({ onClose, onCreated }: { onClose: () => void; onCreated: (
             <tr key={l.key}>
               <td><ItemPicker items={activeItems} value={l.item_id} onChange={id => set(l.key, { item_id: id, manual: false })} exclude={lines.filter(x => x.key !== l.key).map(x => x.item_id!).filter(Boolean)} /></td>
               <td className="num"><ItemQtyInput itemId={l.item_id} unit={it?.unit} value={l.qty} onChange={v => set(l.key, { qty: v })} /></td>
+              <td><UnitCell itemId={l.item_id} unit={it?.unit} /></td>
               <td><select className="select sm" style={{ width: '100%' }} value={l.src ?? ''} onChange={e => set(l.key, { src: e.target.value ? Number(e.target.value) : null, manual: true })}>
                 <option value="">— Chọn —</option>{others.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
               </select></td>
@@ -229,7 +230,7 @@ function PushModal({ onClose, onCreated }: { onClose: () => void; onCreated: (id
       </div>
       {stock.loading ? <Loading /> : (
         <div className="table-wrap"><table className="data lines-table">
-          <thead><tr><th style={{ minWidth: 260 }}>Vật tư gửi đi</th><th className="num" style={{ width: 170 }}>Số lượng</th><th className="num" style={{ width: 140 }}>Còn dùng được</th><th style={{ width: 40 }} /></tr></thead>
+          <thead><tr><th style={{ minWidth: 260 }}>Vật tư gửi đi</th><th className="num" style={{ width: 150 }}>Số lượng</th><th style={{ width: 100 }}>Đơn vị</th><th className="num" style={{ width: 140 }}>Còn dùng được</th><th style={{ width: 40 }} /></tr></thead>
           <tbody>{lines.map(l => {
             const r = l.item_id ? byId.get(l.item_id) : undefined;
             const bad = r && Number(l.qty) > Number(r.usable_qty);
@@ -237,6 +238,7 @@ function PushModal({ onClose, onCreated }: { onClose: () => void; onCreated: (id
               <tr key={l.key}>
                 <td><ItemPicker items={pickItems} value={l.item_id} onChange={id => set(l.key, { item_id: id })} exclude={lines.filter(x => x.key !== l.key).map(x => x.item_id!).filter(Boolean)} /></td>
                 <td className="num"><ItemQtyInput itemId={l.item_id} unit={r?.unit} value={l.qty} onChange={v => set(l.key, { qty: v })} bad={Boolean(bad)} /></td>
+                <td><UnitCell itemId={l.item_id} unit={r?.unit} /></td>
                 <td className="num">{r ? <span className={bad ? 'text-danger' : ''}>{fmtUnits(r.usable_qty, r)}</span> : ''}</td>
                 <td><button className="btn btn-ghost btn-sm icon-only" onClick={() => setLines(ls => ls.length > 1 ? ls.filter(x => x.key !== l.key) : [{ key: seq++, item_id: null, qty: '' }])} aria-label="Xóa dòng"><Trash2 size={15} /></button></td>
               </tr>
@@ -269,12 +271,13 @@ function ReceiveModal({ t, busy, onClose, onConfirm }: { t: Transfer; busy: bool
     </>}>
       <p className="small muted" style={{ marginTop: 0 }}>Kiểm đếm hàng thực tế. Đủ thì giữ nguyên số; thiếu thì sửa <b>Thực nhận</b>. Kho {t.to_branch_name} chỉ được cộng đúng số thực nhận, phần thiếu được ghi lại để BGĐ xử lý.</p>
       <div className="table-wrap"><table className="data">
-        <thead><tr><th>Vật tư</th><th className="num" style={{ width: 120 }}>Đã gửi</th><th className="num" style={{ width: 180 }}>Thực nhận</th><th className="num" style={{ width: 100 }}>Thiếu</th></tr></thead>
+        <thead><tr><th>Vật tư</th><th className="num" style={{ width: 120 }}>Đã gửi</th><th className="num" style={{ width: 150 }}>Thực nhận</th><th style={{ width: 100 }}>Đơn vị</th><th className="num" style={{ width: 100 }}>Thiếu</th></tr></thead>
         <tbody>{rows.map(({ l, s, bad, short }) => (
           <tr key={l.id}>
             <td><span className="item-name">{l.item_name}</span> <span className="item-code">{l.item_code}</span></td>
             <td className="num">{U(s, l.item_id, l.unit)}</td>
             <td className="num"><ItemQtyInput itemId={l.item_id} unit={l.unit} value={got[l.id]} max={s} onChange={v => setGot(g => ({ ...g, [l.id]: v }))} bad={bad} /></td>
+            <td><UnitCell itemId={l.item_id} unit={l.unit} /></td>
             <td className="num">{short > 0 ? <b className="text-danger">{U(short, l.item_id, l.unit)}</b> : <span className="muted">0</span>}</td>
           </tr>
         ))}</tbody>
@@ -346,7 +349,7 @@ function DetailModal({ t, onClose }: { t: Transfer; onClose: () => void }) {
             <td><span className="item-name">{l.item_name}</span> <span className="item-code">{l.item_code}</span></td>
             <td className="num">{U(l.qty_requested, l.item_id, l.unit)}</td>
             <td className="num">{s === 'pending' && has('inv_transfer_approve') && mine(t.from_branch_id)
-              ? <ItemQtyInput itemId={l.item_id} unit={l.unit} value={approveQty[l.id]} onChange={v => setApproveQty(q => ({ ...q, [l.id]: v }))} />
+              ? <ItemQtyInput itemId={l.item_id} unit={l.unit} value={approveQty[l.id]} onChange={v => setApproveQty(q => ({ ...q, [l.id]: v }))} showUnit />
               : l.qty_approved == null ? '—' : U(l.qty_approved, l.item_id, l.unit)}</td>
             <td className="small mono">{l.lots.length ? l.lots.map(x => `${x.lot_no || '—'} (HSD ${fmtDate(x.expiry_date)}) ×${U(x.qty, l.item_id, l.unit)}`).join('; ') : '—'}</td>
             {s === 'received' && <td className="num">{l.qty_received == null || Number(l.qty_received) >= Number(l.qty_approved ?? 0)

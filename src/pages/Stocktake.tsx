@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { Plus, ArrowLeft, Save, Send, CheckCheck, Undo2, Download, Trash2 } from 'lucide-react';
 import { useApp } from '../lib/app-context';
-import { Badge, Empty, Field, ItemPicker, Loading, Modal, PageHeader, QtyInput, useAction, useRpc, usePaged, useUnits } from '../components/ui';
+import { Badge, Empty, Field, ItemPicker, Loading, Modal, PageHeader, QtyInput, UnitCell, useAction, useRpc, usePaged, useUnits } from '../components/ui';
 import { fmtDate, fmtDateTime, hasPack, norm } from '../lib/format';
 import type { Item, Stocktake } from '../lib/types';
 import { exportExcel, sheet } from '../lib/excel';
@@ -79,7 +79,7 @@ function StocktakeDetail({ id, onBack }: { id: number; onBack: () => void }) {
   const qtyBox = (itemId: number | null, unit: string, value: string, onChange: (v: string) => void) => {
     const it = itemId ? byId.get(itemId) : undefined;
     return hasPack(it) ? <QtyInput value={value} onChange={onChange} unit={it} />
-      : <div className="qty-cell"><input className="input sm" type="number" min={0} step="any" value={value} onChange={e => onChange(e.target.value)} /><span className="muted small">{it?.unit ?? unit}</span></div>;
+      : <input className="input sm num" type="number" min={0} step="any" style={{ width: 80, textAlign: 'right' }} value={value} onChange={e => onChange(e.target.value)} aria-label={`Thực đếm (${it?.unit ?? unit})`} />;
   };
   const [counts, setCounts] = useState<Record<number, string>>({});
   const [notes, setNotes] = useState<Record<number, string>>({});
@@ -148,7 +148,7 @@ function StocktakeDetail({ id, onBack }: { id: number; onBack: () => void }) {
         </div>
         {editable && !showSys && <p className="muted small" style={{ marginTop: 0 }}>Đang ẩn số sổ sách để đếm khách quan. Không còn hàng thì nhập 0.</p>}
         <><div className="table-wrap"><table className="data lines-table">
-          <thead><tr><th>Vật tư</th><th style={{ width: 120 }}>Số lô</th><th style={{ width: 110 }}>Hạn dùng</th>{showSystem && <th className="num" style={{ width: 90 }}>Sổ sách</th>}<th className="num" style={{ width: 190 }}>Thực đếm</th>{showSystem && <th className="num" style={{ width: 90 }}>Lệch</th>}<th style={{ width: '22%' }}>Ghi chú</th></tr></thead>
+          <thead><tr><th>Vật tư</th><th style={{ width: 120 }}>Số lô</th><th style={{ width: 110 }}>Hạn dùng</th>{showSystem && <th className="num" style={{ width: 90 }}>Sổ sách</th>}<th className="num" style={{ width: 160 }}>Thực đếm</th>{editable && <th style={{ width: 100 }}>Đơn vị</th>}{showSystem && <th className="num" style={{ width: 90 }}>Lệch</th>}<th style={{ width: '22%' }}>Ghi chú</th></tr></thead>
           <tbody>{pgL.shown.map(l => {
             const v = val(l); const d = v === '' ? null : Number(v) - Number(l.system_qty);
             return (
@@ -160,6 +160,7 @@ function StocktakeDetail({ id, onBack }: { id: number; onBack: () => void }) {
                 <td className="num">{editable
                   ? qtyBox(l.item_id, l.unit, v, nv => setCounts(c => ({ ...c, [l.id]: nv })))
                   : v === '' ? '—' : U(v, l.item_id, l.unit)}</td>
+                {editable && <td><UnitCell itemId={l.item_id} unit={l.unit} /></td>}
                 {showSystem && <td className="num">{d == null ? '' : d === 0 ? <span className="muted">0</span> : <b style={{ color: d < 0 ? 'var(--td-danger)' : 'var(--td-success)' }}>{U(d, l.item_id, l.unit, { sign: true })}</b>}</td>}
                 <td>{editable ? <input className="input sm" style={{ width: '100%' }} value={notes[l.id] ?? l.note ?? ''} onChange={e => setNotes(n => ({ ...n, [l.id]: e.target.value }))} /> : <span className="small">{l.note}</span>}</td>
               </tr>
@@ -172,6 +173,7 @@ function StocktakeDetail({ id, onBack }: { id: number; onBack: () => void }) {
               <td><input className="input sm" type="date" value={x.expiry_date} onChange={e => setExtra(es => es.map(y => y.key === x.key ? { ...y, expiry_date: e.target.value } : y))} /></td>
               {showSystem && <td className="num muted">mới</td>}
               <td className="num">{qtyBox(x.item_id, '', x.counted_qty, nv => setExtra(es => es.map(y => y.key === x.key ? { ...y, counted_qty: nv } : y)))}</td>
+              <td><UnitCell itemId={x.item_id} /></td>
               {showSystem && <td />}
               <td><button className="btn btn-ghost btn-sm icon-only" onClick={() => setExtra(es => es.filter(y => y.key !== x.key))} aria-label="Xóa dòng"><Trash2 size={14} /></button></td>
             </tr>
