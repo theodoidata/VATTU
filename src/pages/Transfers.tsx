@@ -76,11 +76,10 @@ function CreateModal({ onClose, onCreated }: { onClose: () => void; onCreated: (
   const { branchId, branches, canViewAll } = useApp();
   const items = useRpc<Item[]>('list_items');
   const matrix = useRpc<MatrixRow[]>(canViewAll ? 'get_stock_matrix' : null);
-  const [lines, setLines] = useState<Line[]>(() => {
-    const d = handoff.transferDraft; handoff.transferDraft = undefined;
-    return d?.items.length ? d.items.map(x => ({ key: seq++, item_id: x.item_id, qty: String(x.qty) })) : [{ key: seq++, item_id: null, qty: '' }];
-  });
-  const [from, setFrom] = useState<number | ''>('');
+  const [draft] = useState(() => { const d = handoff.transferDraft; handoff.transferDraft = undefined; return d; });
+  const [lines, setLines] = useState<Line[]>(() => draft?.items.length
+    ? draft.items.map(x => ({ key: seq++, item_id: x.item_id, qty: String(x.qty) })) : [{ key: seq++, item_id: null, qty: '' }]);
+  const [from, setFrom] = useState<number | ''>(draft?.from_branch_id && draft.from_branch_id !== branchId ? draft.from_branch_id : '');
   const [note, setNote] = useState('');
   const { run, busy } = useAction();
   const others = branches.filter(b => b.id !== branchId);

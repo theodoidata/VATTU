@@ -43,6 +43,12 @@ await ok('get_stock Hạ Long', async () => {
 });
 await ok('Kho xem tồn chi nhánh khác (view_all)', async () => { const s = await call(U(3), 'get_stock', { branch_id: 1 }); assert(s.length > 0); });
 await err('Bác sĩ không xem được chi nhánh khác', () => call(U(4), 'get_stock', { branch_id: 1 }), 'tất cả chi nhánh');
+await ok('Tồn 1 vật tư ở mọi chi nhánh', async () => {
+  const id = (await call(U(4), 'get_stock')).find(x => Number(x.qty) > 0).id;
+  const r = await call(U(4), 'get_item_branches', { item_id: id });
+  assert(r.length === 11 && r.some(x => Number(x.qty) > 0) && r.every(x => 'usable' in x && 'min' in x));
+});
+await err('Chưa kích hoạt không xem tồn chi nhánh', () => call(U(8), 'get_item_branches', { item_id: 1 }), 'chờ BGĐ');
 await ok('Ma trận tồn', async () => { const m = await call(U(3), 'get_stock_matrix'); assert(m.length > 0 && m.every(r => Object.keys(r.by_branch).length > 0));
   assert(m.every(r => Object.values(r.by_branch).every(c => Number(c.qty) > 0 || Number(c.min) > 0)), 'chỉ ô có tồn / có tối thiểu'); });
 

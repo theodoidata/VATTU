@@ -262,3 +262,55 @@ function Pager({ total, page, pages, size, onPage }: { total: number; page: numb
     </div>
   );
 }
+
+/* ---------------- Cột bộ lọc bên trái (kiểu trang Hàng hóa) ---------------- */
+export function FilterPanel({ active, onClear, children }: { active: number; onClear: () => void; children: ReactNode }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <aside className={`filters${open ? ' open' : ''}`}>
+      <button type="button" className="filters-toggle btn btn-sm" onClick={() => setOpen(o => !o)}>
+        Bộ lọc{active > 0 && <em>{active}</em>}<ChevronRight size={14} className="chev" />
+      </button>
+      <div className="filters-body">
+        {children}
+        {active > 0 && <button type="button" className="btn btn-sm btn-ghost filters-clear" onClick={onClear}>Xóa bộ lọc</button>}
+      </div>
+    </aside>
+  );
+}
+
+export function FilterBlock({ title, children }: { title: string; children: ReactNode }) {
+  return <div className="filter-block"><h3>{title}</h3>{children}</div>;
+}
+
+/** Danh sách nhóm hàng có số lượng, bấm để lọc (thay cho chia tab theo nhóm) */
+export function GroupList({ groups, counts, value, onChange }: {
+  groups: { id: number; name: string }[]; counts: Map<number | null, number>; value: number | ''; onChange: (v: number | '') => void;
+}) {
+  const [q, setQ] = useState('');
+  const n = norm(q.trim());
+  const total = [...counts.values()].reduce((a, b) => a + b, 0);
+  const shown = groups.filter(g => (counts.get(g.id) ?? 0) > 0 && (!n || norm(g.name).includes(n)));
+  return (
+    <div className="group-list">
+      {groups.length > 8 && <input className="input sm" placeholder="Tìm nhóm…" value={q} onChange={e => setQ(e.target.value)} />}
+      <ul>
+        <li className={value === '' ? 'active' : ''} onClick={() => onChange('')}><span>Tất cả nhóm</span><em>{total}</em></li>
+        {shown.map(g => (
+          <li key={g.id} className={value === g.id ? 'active' : ''} onClick={() => onChange(value === g.id ? '' : g.id)}>
+            <span>{g.name}</span><em>{counts.get(g.id)}</em>
+          </li>
+        ))}
+        {(counts.get(null) ?? 0) > 0 && !n && <li className="muted"><span>Chưa có nhóm</span><em>{counts.get(null)}</em></li>}
+      </ul>
+    </div>
+  );
+}
+
+export function Chips<V extends string>({ value, options, onChange }: { value: V; options: readonly (readonly [V, string])[]; onChange: (v: V) => void }) {
+  return (
+    <div className="chips">
+      {options.map(([v, l]) => <button type="button" key={v} className={`chip${value === v ? ' active' : ''}`} onClick={() => onChange(v)}>{l}</button>)}
+    </div>
+  );
+}

@@ -350,6 +350,34 @@ begin
             or coalesce(s.min_qty, i.default_min_qty) > 0));
 end $$;
 
+-- Tồn 1 vật tư ở mọi chi nhánh (khung chi tiết vật tư → biết xin điều chuyển ở đâu).
+-- Ai xem được tồn kho là xem được — chỉ trả số lượng tổng, không lộ chi tiết khác.
+create or replace function public.get_item_branches(p jsonb) returns jsonb
+language plpgsql stable security definer set search_path = public, app as $$
+declare
+  v_item int := nullif(p->>'item_id', '')::int;
+  v_today date := app.today();
+begin
+  perform app.me();
+  perform app.require('inv_stock_view');
+  if v_item is null then raise exception 'Thiếu vật tư.'; end if;
+  return (
+    select coalesce(jsonb_agg(jsonb_build_object(
+             'branch_id', b.id, 'branch_code', b.code, 'branch_name', b.name,
+             'qty', coalesce(x.qty, 0), 'usable', coalesce(x.usable, 0),
+             'min', coalesce(s.min_qty, i.default_min_qty), 'nearest_expiry', x.nearest)
+           order by b.sort_order), '[]'::jsonb)
+      from branches b
+      join items i on i.id = v_item
+      left join item_branch_settings s on s.item_id = i.id and s.branch_id = b.id
+      left join lateral (
+        select sum(l.qty) as qty,
+               sum(l.qty) filter (where l.expiry_date is null or l.expiry_date >= v_today) as usable,
+               min(l.expiry_date) filter (where l.expiry_date >= v_today) as nearest
+          from stock_lots l where l.item_id = i.id and l.branch_id = b.id and l.qty > 0) x on true
+     where b.active);
+end $$;
+
 -- Ma trận tồn: vật tư × chi nhánh
 create or replace function public.get_stock_matrix(p jsonb default '{}'::jsonb) returns jsonb
 language plpgsql stable security definer set search_path = public, app as $$

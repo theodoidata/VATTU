@@ -287,3 +287,40 @@ table.data tfoot td { font-weight: 700; background: #f7f9fb; }
 .pager { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 10px 2px 2px; }
 .pager label { display: inline-flex; align-items: center; gap: 6px; }
 .pager .select.sm { width: auto; min-width: 64px; }
+
+/* Bố cục danh sách có cột bộ lọc bên trái */
+.list-layout { display: grid; grid-template-columns: 250px minmax(0, 1fr); gap: 14px; align-items: start; }
+.filters { background: var(--td-surface); border: 1px solid #e5e9ee; border-radius: 11px; padding: 12px 14px; box-shadow: 0 2px 8px #17203308; }
+.filters-toggle { display: none; }
+.filter-block + .filter-block { margin-top: 14px; }
+.filter-block h3 { font-size: 13px; font-weight: 700; margin: 0 0 6px; color: #20364f; }
+.filter-block .select, .filter-block .input { width: 100%; }
+.filters-clear { margin-top: 12px; width: 100%; justify-content: center; }
+.chips { display: flex; gap: 6px; flex-wrap: wrap; }
+.chip { border: 1px solid #d6dde6; background: #fff; color: inherit; border-radius: 999px; padding: 4px 11px; font: inherit; font-size: 12.5px; cursor: pointer; }
+.chip:hover { border-color: var(--td-color-primary); }
+.chip.active { background: var(--td-color-primary); border-color: var(--td-color-primary); color: #fff; }
+@media (max-width: 900px) {
+  .list-layout { grid-template-columns: 1fr; gap: 10px; }
+  .filters { padding: 8px 10px; }
+  .filters-toggle { display: inline-flex; gap: 6px; align-items: center; }
+  .filters-toggle em { font-style: normal; background: var(--td-color-primary); color: #fff; border-radius: 999px; padding: 0 6px; font-size: 11px; }
+  .filters-toggle .chev { transition: transform .15s; }
+  .filters.open .filters-toggle .chev { transform: rotate(90deg); }
+  .filters-body { display: none; padding-top: 10px; }
+  .filters.open .filters-body { display: block; }
+}
+
+/* Khung chi tiết vật tư */
+.detail-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 8px 14px; margin-bottom: 14px; }
+.detail-grid div small { display: block; color: var(--td-text-muted); font-size: 12px; }
+.detail-grid div b { font-size: 15px; }
+.modal h3.sec { font-size: 14px; margin: 16px 0 8px; color: #20364f; }
+tr.current td { background: var(--td-color-selected); }
+.group-list .input { width: 100%; margin-bottom: 6px; }
+.group-list ul { list-style: none; margin: 0; padding: 0; max-height: 300px; overflow-y: auto; }
+.group-list li { display: flex; justify-content: space-between; gap: 8px; padding: 5px 8px; border-radius: 7px; cursor: pointer; font-size: 13px; }
+.group-list li:hover { background: #f2f5f9; }
+.group-list li.active { background: var(--td-color-selected); color: var(--td-color-primary); font-weight: 600; }
+.group-list li.muted { cursor: default; }
+.group-list li em { font-style: normal; color: var(--td-text-muted); font-size: 12px; }

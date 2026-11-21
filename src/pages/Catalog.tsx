@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { Plus, Download } from 'lucide-react';
 import { useApp } from '../lib/app-context';
-import { Badge, Empty, Field, Loading, Modal, PageHeader, useAction, useRpc, usePaged } from '../components/ui';
+import { Badge, Chips, Empty, Field, FilterBlock, FilterPanel, GroupList, Loading, Modal, PageHeader, useAction, useRpc, usePaged } from '../components/ui';
 import { fmtQty, norm } from '../lib/format';
 import type { Item } from '../lib/types';
 import { exportExcel, sheet } from '../lib/excel';
@@ -13,11 +13,25 @@ export default function CatalogPage() {
   const [group, setGroup] = useState<number | ''>('');
   const [editing, setEditing] = useState<Item | 'new' | null>(null);
   const canEdit = has('inv_catalog_manage');
+  const [lotSel, setLotSel] = useState<'all' | 'yes' | 'no'>('all');
+  const [actSel, setActSel] = useState<'all' | 'on' | 'off'>('all');
+  const [minSel, setMinSel] = useState<'all' | 'set' | 'none'>('all');
+  const hasMin = (i: Item) => Number(i.default_min_qty) > 0 || Object.values(i.mins).some(v => Number(v) > 0);
   const rows = useMemo(() => {
     const n = norm(q.trim());
-    return (list.data ?? []).filter(i => (!group || i.group_id === group) && (!n || norm(i.name).includes(n) || norm(i.code).includes(n)));
-  }, [list.data, q, group]);
-  const pg = usePaged(rows, [q, group]);
+    return (list.data ?? []).filter(i => (!group || i.group_id === group) && (!n || norm(i.name).includes(n) || norm(i.code).includes(n))
+      && (lotSel === 'all' || i.track_lot === (lotSel === 'yes'))
+      && (actSel === 'all' || i.active === (actSel === 'on'))
+      && (minSel === 'all' || hasMin(i) === (minSel === 'set')));
+  }, [list.data, q, group, lotSel, actSel, minSel]);
+  const pg = usePaged(rows, [q, group, lotSel, actSel, minSel]);
+  const groupCounts = useMemo(() => {
+    const m = new Map<number | null, number>();
+    for (const i of list.data ?? []) m.set(i.group_id, (m.get(i.group_id) ?? 0) + 1);
+    return m;
+  }, [list.data]);
+  const activeFilters = [group !== '', lotSel !== 'all', actSel !== 'all', minSel !== 'all'].filter(Boolean).length;
+  const clear = () => { setGroup(''); setLotSel('all'); setActSel('all'); setMinSel('all'); };
   const doExport = () => exportExcel('Danh-muc-vat-tu', [sheet('Danh mục', rows, [
     { header: 'Mã', get: i => i.code, width: 12 }, { header: 'Tên vật tư', get: i => i.name, width: 40 }, { header: 'Nhóm', get: i => i.group_name, width: 24 },
     { header: 'ĐV dùng', get: i => i.unit, width: 9 }, { header: 'ĐV nhập', get: i => i.purchase_unit ?? '', width: 9 }, { header: 'Quy đổi', get: i => Number(i.purchase_factor), width: 9 },
@@ -30,10 +44,16 @@ export default function CatalogPage() {
       <PageHeader title="Danh mục vật tư" description="Tên – đơn vị tính – nhóm – quản lý số lô/hạn dùng – tồn tối thiểu (mặc định và riêng từng chi nhánh)."
         actions={<>{has('inv_report_export') && <button className="btn" onClick={doExport}><Download size={16} /> Xuất Excel</button>}
           {canEdit && <button className="btn btn-primary" onClick={() => setEditing('new')}><Plus size={16} /> Thêm vật tư</button>}</>} />
+      <div className="list-layout">
+      <FilterPanel active={activeFilters} onClear={clear}>
+        <FilterBlock title="Nhóm hàng"><GroupList groups={groups} counts={groupCounts} value={group} onChange={setGroup} /></FilterBlock>
+        <FilterBlock title="Quản lý lô / HSD"><Chips value={lotSel} onChange={setLotSel} options={[['all', 'Tất cả'], ['yes', 'Có'], ['no', 'Không']] as const} /></FilterBlock>
+        <FilterBlock title="Tồn tối thiểu"><Chips value={minSel} onChange={setMinSel} options={[['all', 'Tất cả'], ['set', 'Đã đặt'], ['none', 'Chưa đặt']] as const} /></FilterBlock>
+        <FilterBlock title="Trạng thái"><Chips value={actSel} onChange={setActSel} options={[['all', 'Tất cả'], ['on', 'Đang dùng'], ['off', 'Ngưng dùng']] as const} /></FilterBlock>
+      </FilterPanel>
       <section className="panel">
         <div className="toolbar">
-          <input className="input" placeholder="Tìm theo tên hoặc mã…" value={q} onChange={e => setQ(e.target.value)} />
-          <select className="select" value={group} onChange={e => setGroup(e.target.value ? Number(e.target.value) : '')}><option value="">Tất cả nhóm</option>{groups.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}</select>
+          <input className="input" placeholder="Tìm theo mã, tên vật tư (gõ không dấu được)…" value={q} onChange={e => setQ(e.target.value)} />
           <span className="muted small">{rows.length} vật tư</span>
         </div>
         {list.loading ? <Loading /> : list.error ? <div className="notice danger">{list.error}</div> : !rows.length ? <Empty>Chưa có vật tư.</Empty> : (
@@ -52,6 +72,7 @@ export default function CatalogPage() {
           </table></div>{pg.pager}</>
         )}
       </section>
+      </div>
       {editing && <ItemModal item={editing === 'new' ? null : editing} onClose={() => setEditing(null)} />}
     </>
   );
