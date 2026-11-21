@@ -201,6 +201,8 @@ create table if not exists transfers (
   receive_note    text,
   check (from_branch_id <> to_branch_id)
 );
+-- request = chi nhánh A xin hàng; push = chi nhánh B chủ động cấp (bỏ qua bước xin + duyệt)
+alter table transfers add column if not exists kind text not null default 'request' check (kind in ('request', 'push'));
 create index if not exists transfers_from on transfers (from_branch_id, status);
 create index if not exists transfers_to on transfers (to_branch_id, status);
 
@@ -212,6 +214,8 @@ create table if not exists transfer_lines (
   qty_approved   numeric(12,2) check (qty_approved >= 0),
   lots           jsonb not null default '[]'::jsonb   -- lô đã gửi [{lot_no, expiry_date, qty}]
 );
+-- Số A thực nhận (null = phiếu cũ, coi như nhận đủ). Nhỏ hơn số đã gửi = nhận thiếu, phần thiếu ghi lại để BGĐ xử lý.
+alter table transfer_lines add column if not exists qty_received numeric(12,2) check (qty_received >= 0);
 
 create table if not exists stocktakes (
   id            bigserial primary key,
@@ -462,6 +466,8 @@ language sql stable security definer set search_path = public, app as $$
     'shipped_by_name',   app.person(t.shipped_by),
     'received_by_name',  app.person(t.received_by),
     'closed_by_name',    app.person(t.closed_by),
+    'has_shortage', exists (select 1 from transfer_lines x where x.transfer_id = t.id
+                             and x.qty_received is not null and x.qty_received < x.qty_approved),
     'lines', coalesce((
       select jsonb_agg(to_jsonb(l) || jsonb_build_object(
                'item_code', i.code, 'item_name', i.name, 'unit', i.unit) order by l.id)
@@ -911,6 +917,53 @@ begin
   return app.transfer_json(v_id);
 end $$;
 
+-- Chi nhánh B (vd Kho tổng) chủ động cấp hàng cho chi nhánh A, không cần A xin trước.
+-- Tạo phiếu đã duyệt và gửi ngay (trừ kho B); A chỉ cần xác nhận đã nhận.
+create or replace function public.push_transfer(p jsonb) returns jsonb
+language plpgsql security definer set search_path = public, app as $$
+declare
+  me     profiles := app.me();
+  v_from smallint := coalesce(nullif(p->>'from_branch_id', '')::smallint, me.branch_id);
+  v_to   smallint := nullif(p->>'to_branch_id', '')::smallint;
+  v_id   bigint;
+  v_avail numeric;
+  l      record;
+begin
+  perform app.require('inv_transfer_ship');
+  perform app.require_branch(v_from);
+  if v_to is null or not exists (select 1 from branches where id = v_to and active) then
+    raise exception 'Vui lòng chọn chi nhánh nhận hàng.';
+  end if;
+  if v_from = v_to then raise exception 'Chi nhánh nhận phải khác chi nhánh cấp.'; end if;
+  if jsonb_array_length(coalesce(p->'lines', '[]'::jsonb)) = 0 then raise exception 'Chưa chọn vật tư nào.'; end if;
+
+  insert into transfers (from_branch_id, to_branch_id, note, kind, status, requested_by, approved_by, approved_at)
+  values (v_from, v_to, nullif(trim(coalesce(p->>'note', '')), ''), 'push', 'approved', me.id, me.id, now())
+  returning id into v_id;
+  update transfers
+     set code = 'DC' || to_char(now() at time zone 'Asia/Ho_Chi_Minh', 'YYMMDD') || '-' || lpad(v_id::text, 4, '0')
+   where id = v_id;
+
+  for l in select * from jsonb_to_recordset(p->'lines') as x(item_id int, qty numeric) loop
+    if l.item_id is null then raise exception 'Dòng cấp hàng chưa chọn vật tư.'; end if;
+    if l.qty is null or l.qty <= 0 then raise exception '% — số lượng phải lớn hơn 0.', app.item_label(l.item_id); end if;
+    if exists (select 1 from transfer_lines where transfer_id = v_id and item_id = l.item_id) then
+      raise exception '% bị chọn trùng.', app.item_label(l.item_id);
+    end if;
+    select coalesce(sum(qty), 0) into v_avail from stock_lots
+     where branch_id = v_from and item_id = l.item_id and qty > 0
+       and (expiry_date is null or expiry_date >= app.today());
+    if v_avail < l.qty then
+      raise exception '% — kho % chỉ còn % (còn hạn), không đủ cấp %.',
+        app.item_label(l.item_id), app.branch_name(v_from), app.fmt(v_avail), app.fmt(l.qty);
+    end if;
+    insert into transfer_lines (transfer_id, item_id, qty_requested, qty_approved) values (v_id, l.item_id, l.qty, l.qty);
+  end loop;
+
+  perform public.transfer_action(jsonb_build_object('id', v_id, 'action', 'ship'));
+  return app.transfer_json(v_id);
+end $$;
+
 create or replace function public.list_transfers(p jsonb default '{}'::jsonb) returns jsonb
 language plpgsql stable security definer set search_path = public, app as $$
 declare
@@ -1004,15 +1057,38 @@ begin
     if t.status <> 'shipped' then raise exception 'Phiếu chưa được bên cấp gửi hàng.'; end if;
     perform app.require('inv_transfer_receive');
     perform app.require_branch(t.to_branch_id);
-    for l in select * from transfer_lines where transfer_id = t.id and qty_approved > 0 loop
-      for lot in select * from jsonb_to_recordset(l.lots) as x(lot_no text, expiry_date date, qty numeric) loop
-        perform app.add_stock(t.to_branch_id, l.item_id, lot.lot_no, lot.expiry_date, lot.qty,
+    for l in select * from transfer_lines where transfer_id = t.id and qty_approved > 0 order by id loop
+      v_avail := (select coalesce(sum((x->>'qty')::numeric), 0) from jsonb_array_elements(l.lots) x);  -- số đã gửi
+      -- Số thực nhận từng dòng (không gửi = nhận đủ)
+      v_qty := coalesce((select nullif(x->>'qty_received', '')::numeric
+                           from jsonb_array_elements(coalesce(p->'lines', '[]'::jsonb)) x
+                          where (x->>'line_id')::bigint = l.id), v_avail);
+      if v_qty < 0 or v_qty > v_avail then
+        raise exception '% — số thực nhận phải từ 0 đến % (số đã gửi).', app.item_label(l.item_id), app.fmt(v_avail);
+      end if;
+      -- Cộng kho A theo đúng lô đã gửi, lô hết hạn sớm nhất trước; phần thiếu không cộng
+      v_total := v_qty;
+      for lot in select * from jsonb_to_recordset(l.lots) as x(lot_no text, expiry_date date, qty numeric)
+                  order by expiry_date nulls last loop
+        exit when v_total <= 0;
+        perform app.add_stock(t.to_branch_id, l.item_id, lot.lot_no, lot.expiry_date, least(lot.qty, v_total),
                               'transfer_in', app.today(),
                               'Nhận từ ' || app.branch_name(t.from_branch_id), 'transfer', t.id);
+        v_total := v_total - least(lot.qty, v_total);
       end loop;
+      update transfer_lines set qty_received = v_qty where id = l.id;
+      if v_qty < v_avail then
+        v_lots := coalesce(v_lots, '[]'::jsonb) || to_jsonb(app.item_label(l.item_id) || ' thiếu ' || app.fmt(v_avail - v_qty));
+      end if;
     end loop;
+    if v_lots is not null and v_reason is null then
+      raise exception 'Nhận thiếu hàng (%) — vui lòng ghi lý do / tình trạng để BGĐ xử lý.',
+        (select string_agg(x, '; ') from jsonb_array_elements_text(v_lots) x);
+    end if;
     update transfers set status = 'received', received_by = me.id, received_at = now(),
-           receive_note = v_reason where id = t.id;
+           receive_note = case when v_lots is null then v_reason
+                               else '[Nhận thiếu: ' || (select string_agg(x, '; ') from jsonb_array_elements_text(v_lots) x) || '] ' || v_reason end
+     where id = t.id;
 
   elsif v_action = 'cancel' then
     if t.status not in ('pending', 'approved') then raise exception 'Chỉ hủy được phiếu chưa gửi hàng.'; end if;

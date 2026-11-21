@@ -32,7 +32,7 @@ export type MatrixRow = {
 export type TransferStatus = 'pending' | 'approved' | 'shipped' | 'received' | 'rejected' | 'cancelled';
 export type TransferLine = {
   id: number; item_id: number; item_code: string; item_name: string; unit: string;
-  qty_requested: number; qty_approved: number | null;
+  qty_requested: number; qty_approved: number | null; qty_received: number | null;
   lots: { lot_no: string; expiry_date: string | null; qty: number }[];
 };
 export type Transfer = {
@@ -41,6 +41,7 @@ export type Transfer = {
   requested_at: string; approved_at: string | null; shipped_at: string | null; received_at: string | null; closed_at: string | null;
   requested_by_name: string | null; approved_by_name: string | null; shipped_by_name: string | null;
   received_by_name: string | null; closed_by_name: string | null; lines: TransferLine[];
+  kind: 'request' | 'push'; has_shortage: boolean;
 };
 
 export type UsageDoc = {

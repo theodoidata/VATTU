@@ -3,7 +3,7 @@ import { Plus, Trash2, Send, Check, X, PackageCheck, Truck, Lightbulb } from 'lu
 import { useApp, type AppCtx } from '../lib/app-context';
 import { Badge, Empty, Field, ItemPicker, Loading, Modal, PageHeader, ReasonModal, useAction, useRpc, usePaged } from '../components/ui';
 import { TRANSFER_STATUS, fmtDate, fmtDateTime, fmtQty } from '../lib/format';
-import type { Item, MatrixRow, Transfer } from '../lib/types';
+import type { Item, MatrixRow, StockRow, Transfer, TransferLine } from '../lib/types';
 import { handoff } from '../lib/handoff';
 
 /** Phiếu đang chờ chính người dùng này làm bước tiếp theo */
@@ -25,6 +25,7 @@ export default function TransfersPage() {
   const [tab, setTab] = useState<Tab>('todo');
   const [creating, setCreating] = useState(() => Boolean(handoff.transferDraft));
   const [openId, setOpenId] = useState<number | null>(null);
+  const [pushing, setPushing] = useState(false);
 
   const all = list.data ?? [];
   const groups = useMemo(() => ({
@@ -40,8 +41,11 @@ export default function TransfersPage() {
   return (
     <>
       <PageHeader title="Điều chuyển vật tư"
-        description={<>Quy trình: <b>chi nhánh thiếu (A)</b> tạo yêu cầu → <b>chi nhánh cấp (B)</b> duyệt → B xác nhận <b>đã gửi</b> (trừ kho B) → A xác nhận <b>đã nhận</b> (cộng kho A).</>}
-        actions={has('inv_transfer_request') && canAct(branchId) && <button className="btn btn-primary" onClick={() => setCreating(true)}><Plus size={16} /> Tạo yêu cầu cho {branch?.name}</button>} />
+        description={<>Quy trình: <b>chi nhánh thiếu (A)</b> tạo yêu cầu → <b>chi nhánh cấp (B)</b> duyệt → B xác nhận <b>đã gửi</b> (trừ kho B) → A xác nhận <b>đã nhận</b> (cộng kho A). B cũng có thể <b>cấp hàng chủ động</b> không cần A xin.</>}
+        actions={<>
+          {has('inv_transfer_ship') && canAct(branchId) && <button className="btn" onClick={() => setPushing(true)}><Truck size={16} /> {branch?.name} cấp hàng đi</button>}
+          {has('inv_transfer_request') && canAct(branchId) && <button className="btn btn-primary" onClick={() => setCreating(true)}><Plus size={16} /> Tạo yêu cầu cho {branch?.name}</button>}
+        </>} />
       <section className="panel">
         <div className="tabs">
           {([['todo', 'Cần tôi xử lý'], ['in', `${branch?.name} xin hàng`], ['out', `${branch?.name} cấp hàng`], ['all', 'Tất cả']] as const).map(([k, l]) => (
@@ -56,7 +60,8 @@ export default function TransfersPage() {
                 <td><b className="mono">{t.code}</b>{transferNeedsMe(t, app) && <div><Badge tone="danger">Cần bạn xử lý</Badge></div>}</td>
                 <td>{t.to_branch_name}</td><td>{t.from_branch_name}</td>
                 <td className="small">{t.lines.slice(0, 2).map(l => `${l.item_name} ×${fmtQty(l.qty_approved ?? l.qty_requested)}`).join('; ')}{t.lines.length > 2 && ` … +${t.lines.length - 2}`}</td>
-                <td><Badge tone={TRANSFER_STATUS[t.status].tone}>{TRANSFER_STATUS[t.status].label}</Badge></td>
+                <td><Badge tone={TRANSFER_STATUS[t.status].tone}>{TRANSFER_STATUS[t.status].label}</Badge>
+                  {t.kind === 'push' && <div><Badge tone="info">Cấp chủ động</Badge></div>}{t.has_shortage && <div><Badge tone="danger">Nhận thiếu</Badge></div>}</td>
                 <td className="small nowrap">{fmtDateTime(t.requested_at)}</td><td className="small">{t.requested_by_name}</td>
               </tr>
             ))}</tbody>
@@ -64,6 +69,7 @@ export default function TransfersPage() {
         )}
       </section>
       {creating && <CreateModal onClose={() => { handoff.transferDraft = undefined; setCreating(false); }} onCreated={id => { setCreating(false); setOpenId(id); setTab('in'); }} />}
+      {pushing && <PushModal onClose={() => setPushing(false)} onCreated={id => { setPushing(false); setOpenId(id); setTab('out'); }} />}
       {open && <DetailModal t={open} onClose={() => setOpenId(null)} />}
     </>
   );
@@ -177,6 +183,108 @@ function CreateModal({ onClose, onCreated }: { onClose: () => void; onCreated: (
   );
 }
 
+type PushLine = { key: number; item_id: number | null; qty: string };
+
+/** Chi nhánh đang xem (B) chủ động cấp hàng cho chi nhánh khác: trừ kho ngay, bên nhận chỉ cần xác nhận */
+function PushModal({ onClose, onCreated }: { onClose: () => void; onCreated: (id: number) => void }) {
+  const { branchId, branches } = useApp();
+  const stock = useRpc<StockRow[]>('get_stock', { branch_id: branchId });
+  const [to, setTo] = useState<number | ''>('');
+  const [note, setNote] = useState('');
+  const [lines, setLines] = useState<PushLine[]>([{ key: seq++, item_id: null, qty: '' }]);
+  const { run, busy } = useAction();
+  const others = branches.filter(b => b.id !== branchId);
+  const byId = useMemo(() => new Map((stock.data ?? []).map(r => [r.id, r])), [stock.data]);
+  const pickItems = useMemo(() => (stock.data ?? []).filter(r => Number(r.usable_qty) > 0).map(r => ({
+    id: r.id, code: r.code, name: r.name, unit: r.unit, group_name: r.group_name,
+    extra: <span>còn {fmtQty(r.usable_qty)} {r.unit}</span>,
+  })), [stock.data]);
+  const set = (key: number, patch: Partial<PushLine>) => setLines(ls => ls.map(l => (l.key === key ? { ...l, ...patch } : l)));
+  const valid = lines.filter(l => l.item_id && Number(l.qty) > 0);
+  const over = valid.filter(l => Number(l.qty) > Number(byId.get(l.item_id!)?.usable_qty ?? 0));
+  const fromName = branches.find(b => b.id === branchId)?.name;
+  async function submit() {
+    const r = await run<Transfer>('push_transfer', { from_branch_id: branchId, to_branch_id: to, note, lines: valid.map(l => ({ item_id: l.item_id, qty: Number(l.qty) })) },
+      `Đã gửi hàng, kho ${fromName} đã được trừ`);
+    if (r) onCreated(r.id);
+  }
+  return (
+    <Modal size="wide" title={`${fromName} cấp hàng chủ động`} onClose={onClose} footer={<>
+      <div className="foot-summary small">
+        {over.length > 0 ? <span className="text-danger">{over.length} dòng vượt số còn dùng được.</span>
+          : valid.length > 0 && to ? <>Gửi <b>{valid.length} vật tư</b> đến <b>{branches.find(b => b.id === to)?.name}</b>, kho {fromName} bị trừ ngay.</> : <span className="muted">Chọn chi nhánh nhận và vật tư cần gửi.</span>}
+      </div>
+      <button className="btn" onClick={onClose}>Đóng</button>
+      <button className="btn btn-primary" disabled={busy || !valid.length || !to || over.length > 0} onClick={submit}><Truck size={16} /> Gửi hàng</button>
+    </>}>
+      <div className="form-grid" style={{ marginBottom: 12 }}>
+        <Field label="Gửi đến chi nhánh">
+          <select className="select" value={to} onChange={e => setTo(e.target.value ? Number(e.target.value) : '')}>
+            <option value="">— Chọn chi nhánh nhận —</option>{others.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
+          </select>
+        </Field>
+        <Field label="Ghi chú"><input className="input" value={note} onChange={e => setNote(e.target.value)} placeholder="VD: bổ sung định kỳ tháng 11" /></Field>
+      </div>
+      {stock.loading ? <Loading /> : (
+        <div className="table-wrap"><table className="data lines-table">
+          <thead><tr><th style={{ minWidth: 260 }}>Vật tư gửi đi</th><th className="num" style={{ width: 150 }}>Số lượng</th><th className="num" style={{ width: 140 }}>Còn dùng được</th><th style={{ width: 40 }} /></tr></thead>
+          <tbody>{lines.map(l => {
+            const r = l.item_id ? byId.get(l.item_id) : undefined;
+            const bad = r && Number(l.qty) > Number(r.usable_qty);
+            return (
+              <tr key={l.key}>
+                <td><ItemPicker items={pickItems} value={l.item_id} onChange={id => set(l.key, { item_id: id })} exclude={lines.filter(x => x.key !== l.key).map(x => x.item_id!).filter(Boolean)} /></td>
+                <td className="num"><div className="qty-cell"><input className="input sm" type="number" min={0} step="any" value={l.qty} onChange={e => set(l.key, { qty: e.target.value })} style={bad ? { borderColor: 'var(--td-danger)' } : undefined} /><span className="muted small">{r?.unit}</span></div></td>
+                <td className="num">{r ? <span className={bad ? 'text-danger' : ''}>{fmtQty(r.usable_qty)} {r.unit}</span> : ''}</td>
+                <td><button className="btn btn-ghost btn-sm icon-only" onClick={() => setLines(ls => ls.length > 1 ? ls.filter(x => x.key !== l.key) : [{ key: seq++, item_id: null, qty: '' }])} aria-label="Xóa dòng"><Trash2 size={15} /></button></td>
+              </tr>
+            );
+          })}</tbody>
+        </table></div>
+      )}
+      <button className="btn btn-sm" style={{ marginTop: 8 }} onClick={() => setLines(ls => [...ls, { key: seq++, item_id: null, qty: '' }])}><Plus size={14} /> Thêm vật tư</button>
+      <p className="muted small" style={{ marginBottom: 0 }}>Bấm “Gửi hàng” là kho {fromName} bị trừ ngay (lô hết hạn sớm nhất trước). Chi nhánh nhận kiểm hàng rồi bấm “Đã nhận”, nếu thiếu thì nhập số thực nhận.</p>
+    </Modal>
+  );
+}
+
+/** A xác nhận nhận hàng: nhập số thực nhận từng dòng, thiếu thì bắt buộc ghi lý do */
+function ReceiveModal({ t, busy, onClose, onConfirm }: { t: Transfer; busy: boolean; onClose: () => void; onConfirm: (lines: { line_id: number; qty_received: number }[], note: string, short: boolean) => void }) {
+  const shipped = (l: TransferLine) => l.lots.reduce((s, x) => s + Number(x.qty), 0);
+  const sent = t.lines.filter(l => shipped(l) > 0);
+  const [got, setGot] = useState<Record<number, string>>(() => Object.fromEntries(sent.map(l => [l.id, String(shipped(l))])));
+  const [note, setNote] = useState('');
+  const rows = sent.map(l => { const s = shipped(l), g = got[l.id] === '' ? NaN : Number(got[l.id]); return { l, s, g, bad: !(g >= 0 && g <= s), short: g >= 0 && g < s ? s - g : 0 }; });
+  const anyBad = rows.some(r => r.bad), shortRows = rows.filter(r => r.short > 0);
+  return (
+    <Modal size="wide" title="Xác nhận đã nhận hàng" onClose={onClose} footer={<>
+      <button className="btn" onClick={onClose}>Quay lại</button>
+      <button className={`btn ${shortRows.length ? 'btn-danger' : 'btn-success'}`} disabled={busy || anyBad || (shortRows.length > 0 && !note.trim())}
+        onClick={() => onConfirm(rows.map(r => ({ line_id: r.l.id, qty_received: r.g })), note.trim(), shortRows.length > 0)}>
+        <PackageCheck size={16} /> {shortRows.length ? `Xác nhận nhận thiếu ${shortRows.length} vật tư` : 'Đã nhận đủ hàng'}
+      </button>
+    </>}>
+      <p className="small muted" style={{ marginTop: 0 }}>Kiểm đếm hàng thực tế. Đủ thì giữ nguyên số; thiếu thì sửa <b>Thực nhận</b>. Kho {t.to_branch_name} chỉ được cộng đúng số thực nhận, phần thiếu được ghi lại để BGĐ xử lý.</p>
+      <div className="table-wrap"><table className="data">
+        <thead><tr><th>Vật tư</th><th className="num" style={{ width: 120 }}>Đã gửi</th><th className="num" style={{ width: 160 }}>Thực nhận</th><th className="num" style={{ width: 100 }}>Thiếu</th></tr></thead>
+        <tbody>{rows.map(({ l, s, bad, short }) => (
+          <tr key={l.id}>
+            <td><span className="item-name">{l.item_name}</span> <span className="item-code">{l.item_code}</span></td>
+            <td className="num">{fmtQty(s)} {l.unit}</td>
+            <td className="num"><div className="qty-cell"><input className="input sm" type="number" min={0} max={s} step="any" value={got[l.id]} onChange={e => setGot(g => ({ ...g, [l.id]: e.target.value }))} style={bad ? { borderColor: 'var(--td-danger)' } : undefined} /><span className="muted small">{l.unit}</span></div></td>
+            <td className="num">{short > 0 ? <b className="text-danger">{fmtQty(short)}</b> : <span className="muted">0</span>}</td>
+          </tr>
+        ))}</tbody>
+      </table></div>
+      <div style={{ marginTop: 12 }}>
+        <Field label={shortRows.length ? 'Lý do thiếu / tình trạng (bắt buộc)' : 'Ghi chú (không bắt buộc)'}>
+          <input className="input" value={note} onChange={e => setNote(e.target.value)} placeholder={shortRows.length ? 'VD: thiếu 1 hộp, bên gửi đóng nhầm / rơi vỡ khi vận chuyển' : ''} />
+        </Field>
+      </div>
+    </Modal>
+  );
+}
+
 function DetailModal({ t, onClose }: { t: Transfer; onClose: () => void }) {
   const app = useApp();
   const { has, session } = app;
@@ -189,7 +297,11 @@ function DetailModal({ t, onClose }: { t: Transfer; onClose: () => void }) {
     if (r) setAsk(null);
   };
   const s = t.status;
-  const steps = [
+  const steps = t.kind === 'push' ? [
+    { label: '1. B cấp chủ động', who: t.requested_by_name, at: t.requested_at, done: true },
+    { label: '2. B đã gửi', who: t.shipped_by_name, at: t.shipped_at, done: ['shipped', 'received'].includes(s) },
+    { label: '3. A đã nhận', who: t.received_by_name, at: t.received_at, done: s === 'received' },
+  ] : [
     { label: '1. Tạo yêu cầu', who: t.requested_by_name, at: t.requested_at, done: true },
     { label: '2. B duyệt', who: t.approved_by_name, at: t.approved_at, done: ['approved', 'shipped', 'received'].includes(s) },
     { label: '3. B đã gửi', who: t.shipped_by_name, at: t.shipped_at, done: ['shipped', 'received'].includes(s) },
@@ -212,7 +324,8 @@ function DetailModal({ t, onClose }: { t: Transfer; onClose: () => void }) {
         <button className="btn btn-success" disabled={busy} onClick={() => setAsk('receive')}><PackageCheck size={16} /> Xác nhận đã nhận hàng</button>}
     </>}>
       <div className="row small" style={{ marginBottom: 10 }}>
-        <span><b>{t.to_branch_name}</b> (A) xin hàng từ <b>{t.from_branch_name}</b> (B)</span>
+        {t.kind === 'push' ? <span><b>{t.from_branch_name}</b> (B) chủ động cấp hàng cho <b>{t.to_branch_name}</b> (A)</span>
+          : <span><b>{t.to_branch_name}</b> (A) xin hàng từ <b>{t.from_branch_name}</b> (B)</span>}
         {t.note && <span className="muted">· {t.note}</span>}
       </div>
       <div className="steps">{steps.map((x, i) => (
@@ -221,9 +334,9 @@ function DetailModal({ t, onClose }: { t: Transfer; onClose: () => void }) {
         </div>
       ))}</div>
       {bad && <div className="notice danger">{s === 'rejected' ? 'Bị từ chối' : 'Đã hủy'} bởi {t.closed_by_name} lúc {fmtDateTime(t.closed_at)}{t.reject_reason ? `: ${t.reject_reason}` : ''}</div>}
-      {t.receive_note && <div className="notice">Ghi chú khi nhận: {t.receive_note}</div>}
+      {t.receive_note && <div className={`notice${t.has_shortage ? ' danger' : ''}`}>Ghi chú khi nhận: {t.receive_note}</div>}
       <div className="table-wrap"><table className="data">
-        <thead><tr><th>Vật tư</th><th className="num">Yêu cầu</th><th className="num">Duyệt cấp</th><th>Lô đã gửi</th></tr></thead>
+        <thead><tr><th>Vật tư</th><th className="num">{t.kind === 'push' ? 'Cấp' : 'Yêu cầu'}</th><th className="num">Duyệt cấp</th><th>Lô đã gửi</th>{s === 'received' && <th className="num">Thực nhận</th>}</tr></thead>
         <tbody>{t.lines.map(l => (
           <tr key={l.id}>
             <td><span className="item-name">{l.item_name}</span> <span className="item-code">{l.item_code}</span></td>
@@ -232,6 +345,9 @@ function DetailModal({ t, onClose }: { t: Transfer; onClose: () => void }) {
               ? <input className="input sm" type="number" min={0} step="any" style={{ width: 80, textAlign: 'right' }} value={approveQty[l.id]} onChange={e => setApproveQty(q => ({ ...q, [l.id]: e.target.value }))} />
               : l.qty_approved == null ? '—' : `${fmtQty(l.qty_approved)} ${l.unit}`}</td>
             <td className="small mono">{l.lots.length ? l.lots.map(x => `${x.lot_no || '—'} (HSD ${fmtDate(x.expiry_date)}) ×${fmtQty(x.qty)}`).join('; ') : '—'}</td>
+            {s === 'received' && <td className="num">{l.qty_received == null || Number(l.qty_received) >= Number(l.qty_approved ?? 0)
+              ? `${fmtQty(l.qty_received ?? l.qty_approved)} ${l.unit}`
+              : <b className="text-danger" title={`Thiếu ${fmtQty(Number(l.qty_approved) - Number(l.qty_received))}`}>{fmtQty(l.qty_received)} {l.unit} (thiếu {fmtQty(Number(l.qty_approved) - Number(l.qty_received))})</b>}</td>}
           </tr>
         ))}</tbody>
       </table></div>
@@ -240,9 +356,9 @@ function DetailModal({ t, onClose }: { t: Transfer; onClose: () => void }) {
 
       {ask === 'reject' && <ReasonModal title="Từ chối yêu cầu" label="Lý do từ chối" confirmText="Từ chối" tone="danger" busy={busy} onClose={() => setAsk(null)} onConfirm={r => act('reject', { reason: r }, 'Đã từ chối yêu cầu')} />}
       {ask === 'cancel' && <ReasonModal title="Hủy yêu cầu" label="Lý do (không bắt buộc)" required={false} confirmText="Hủy yêu cầu" tone="danger" busy={busy} onClose={() => setAsk(null)} onConfirm={r => act('cancel', { reason: r }, 'Đã hủy yêu cầu')} />}
-      {ask === 'receive' && <ReasonModal title="Xác nhận đã nhận hàng" label="Ghi chú (không bắt buộc)" required={false} confirmText="Đã nhận đủ hàng" tone="success" busy={busy} onClose={() => setAsk(null)} onConfirm={r => act('receive', { reason: r }, `Đã nhận hàng — kho ${t.to_branch_name} đã được cộng`)}>
-        <p className="small muted" style={{ marginTop: 0 }}>Kho {t.to_branch_name} sẽ được cộng đúng số lượng, số lô và hạn dùng bên {t.from_branch_name} đã gửi.</p>
-      </ReasonModal>}
+      {ask === 'receive' && <ReceiveModal t={t} busy={busy} onClose={() => setAsk(null)}
+        onConfirm={(lines, note, short) => act('receive', { lines, reason: note },
+          short ? `Đã nhận thiếu, kho ${t.to_branch_name} được cộng theo số thực nhận` : `Đã nhận hàng, kho ${t.to_branch_name} đã được cộng`)} />}
     </Modal>
   );
 }

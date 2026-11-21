@@ -125,6 +125,37 @@ await ok('Kiểm kê: tạo → đếm → nộp → chốt điều chỉnh tồ
   assert(after === before - 1, `điều chỉnh sai ${before} → ${after}`);
 });
 
+await ok('Cấp hàng chủ động: Hạ Long cấp cho Mạo Khê, trừ kho ngay, Mạo Khê nhận', async () => {
+  const s = (await call(U(3), 'get_stock')).find(x => Number(x.usable_qty) >= 3 && !x.lots.some(l => l.expiry_date && l.expiry_date < '2000'));
+  const hl0 = Number(s.qty); const mk0 = Number((await db.query('select coalesce(sum(qty),0) q from stock_lots where branch_id=8 and item_id=$1', [s.id])).rows[0].q);
+  const t = await call(U(3), 'push_transfer', { to_branch_id: 8, note: 'bổ sung', lines: [{ item_id: s.id, qty: 3 }] });
+  assert(t.kind === 'push' && t.status === 'shipped', 'phải gửi ngay: ' + t.status);
+  const hl1 = Number((await call(U(3), 'get_stock', { all: true })).find(x => x.id === s.id).qty);
+  assert(hl1 === hl0 - 3, `kho cấp chưa trừ ${hl0} → ${hl1}`);
+  await call(U(6), 'transfer_action', { id: t.id, action: 'receive' });
+  const mk1 = Number((await db.query('select coalesce(sum(qty),0) q from stock_lots where branch_id=8 and item_id=$1', [s.id])).rows[0].q);
+  assert(mk1 === mk0 + 3, `kho nhận sai ${mk0} → ${mk1}`);
+});
+await err('Bác sĩ không cấp hàng chủ động được', () => call(U(4), 'push_transfer', { to_branch_id: 8, lines: [{ item_id: 1, qty: 1 }] }), 'quyền');
+await err('Không cấp quá số còn dùng được', async () => {
+  const s = (await call(U(3), 'get_stock')).find(x => Number(x.usable_qty) > 0);
+  await call(U(3), 'push_transfer', { to_branch_id: 8, lines: [{ item_id: s.id, qty: Number(s.usable_qty) + 100 }] });
+}, 'không đủ cấp');
+
+await ok('Nhận thiếu: chỉ cộng số thực nhận, bắt buộc ghi lý do, đánh dấu thiếu', async () => {
+  const s = (await call(U(3), 'get_stock')).find(x => Number(x.usable_qty) >= 4);
+  const mk = async () => Number((await db.query('select coalesce(sum(qty),0) q from stock_lots where branch_id=8 and item_id=$1', [s.id])).rows[0].q);
+  const before = await mk();
+  const t = await call(U(3), 'push_transfer', { to_branch_id: 8, lines: [{ item_id: s.id, qty: 4 }] });
+  const lines = [{ line_id: t.lines[0].id, qty_received: 1 }];
+  assert(await throws(() => call(U(6), 'transfer_action', { id: t.id, action: 'receive', lines })), 'thiếu mà không ghi lý do phải báo lỗi');
+  assert(await throws(() => call(U(6), 'transfer_action', { id: t.id, action: 'receive', lines: [{ line_id: t.lines[0].id, qty_received: 9 }], reason: 'x' })), 'nhận quá số gửi phải báo lỗi');
+  const r = await call(U(6), 'transfer_action', { id: t.id, action: 'receive', lines, reason: 'rơi vỡ khi vận chuyển' });
+  assert(r.status === 'received' && r.has_shortage && Number(r.lines[0].qty_received) === 1, 'chưa đánh dấu nhận thiếu');
+  assert(r.receive_note.includes('thiếu 3'), 'ghi chú chưa có phần thiếu: ' + r.receive_note);
+  assert(await mk() === before + 1, 'chỉ được cộng 1');
+});
+
 await ok('Kiểm kê: nộp khi còn dòng trống → dòng trống tính là 0', async () => {
   const st = await call(U(6), 'create_stocktake', { group_id: 2 });
   const d = await call(U(6), 'get_stocktake', { id: st.id });

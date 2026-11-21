@@ -172,6 +172,8 @@ create table if not exists transfers (
   receive_note    text,
   check (from_branch_id <> to_branch_id)
 );
+-- request = chi nhánh A xin hàng; push = chi nhánh B chủ động cấp (bỏ qua bước xin + duyệt)
+alter table transfers add column if not exists kind text not null default 'request' check (kind in ('request', 'push'));
 create index if not exists transfers_from on transfers (from_branch_id, status);
 create index if not exists transfers_to on transfers (to_branch_id, status);
 
@@ -183,6 +185,8 @@ create table if not exists transfer_lines (
   qty_approved   numeric(12,2) check (qty_approved >= 0),
   lots           jsonb not null default '[]'::jsonb   -- lô đã gửi [{lot_no, expiry_date, qty}]
 );
+-- Số A thực nhận (null = phiếu cũ, coi như nhận đủ). Nhỏ hơn số đã gửi = nhận thiếu, phần thiếu ghi lại để BGĐ xử lý.
+alter table transfer_lines add column if not exists qty_received numeric(12,2) check (qty_received >= 0);
 
 create table if not exists stocktakes (
   id            bigserial primary key,
