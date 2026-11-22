@@ -5,6 +5,7 @@ import { Badge, Empty, Field, ItemPicker, Loading, Modal, PageHeader, QtyInput, 
 import { fmtDate, fmtDateTime, hasPack, norm } from '../lib/format';
 import type { Item, Stocktake } from '../lib/types';
 import { exportExcel, sheet } from '../lib/excel';
+import { handoff } from '../lib/handoff';
 
 const ST: Record<Stocktake['status'], { label: string; tone: string }> = {
   draft: { label: 'Đang đếm', tone: 'info' },
@@ -17,7 +18,7 @@ export default function StocktakePage() {
   const { branchId, branches, groups, has, canAct } = useApp();
   const branch = branches.find(b => b.id === branchId);
   const list = useRpc<Stocktake[]>('list_stocktakes', { branch_id: branchId });
-  const [openId, setOpenId] = useState<number | null>(null);
+  const [openId, setOpenId] = useState<number | null>(() => { const id = handoff.openStocktakeId ?? null; handoff.openStocktakeId = undefined; return id; });
   const [creating, setCreating] = useState(false);
   const [group, setGroup] = useState<number | ''>('');
   const [note, setNote] = useState('');

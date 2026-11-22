@@ -62,10 +62,11 @@ a { color: var(--td-color-primary); }
 .topbar .icon-btn { width: 34px; height: 34px; border-radius: 8px; border: 0; background: #ffffff1a; color: #fff; display: grid; place-items: center; }
 .topbar .icon-btn:hover { background: #ffffff33; }
 .topbar select.branch-pill, .topbar .branch-pill {
-  height: 36px; min-width: 128px; border-radius: 9px; border: 1px solid #ffffff66; background: #0a4fae; color: #fff;
-  font-weight: 700; padding: 0 10px; display: inline-flex; align-items: center;
+  height: 36px; min-width: 128px; border-radius: 9px; border: 0; background: #fff; color: #0a3a8c;
+  font-weight: 700; padding: 0 10px; display: inline-flex; align-items: center; outline: none; box-shadow: none;
 }
-.topbar select.branch-pill:hover { border-color: #fff; }
+.topbar select.branch-pill:focus, .topbar select.branch-pill:focus-visible { outline: none; box-shadow: 0 0 0 3px #ffffff55; }
+.topbar select.branch-pill option { background: #fff; color: #0a3a8c; font-weight: 500; }
 .round-btn { position: relative; width: 36px; height: 36px; border-radius: 50%; border: 1.5px solid #ffffffcc; background: transparent; color: #fff; display: grid; place-items: center; padding: 0; }
 .round-btn:hover { background: #ffffff22; }
 .round-btn em { position: absolute; top: -5px; right: -5px; background: #e95555; color: #fff; border-radius: 10px; padding: 0 5px; font-size: 10px; line-height: 16px; font-style: normal; font-weight: 700; }
@@ -74,6 +75,11 @@ a { color: var(--td-color-primary); }
 .user-pop span { color: var(--td-text-secondary); font-size: 13px; }
 .user-pop small { color: var(--td-text-muted); }
 .user-pop .btn { margin-top: 8px; justify-content: center; }
+.task-pop { width: 320px; max-height: 70vh; overflow: auto; }
+.task-pop ul { list-style: none; margin: 4px -8px 0; padding: 0; }
+.task-pop li button { width: 100%; text-align: left; border: 0; background: transparent; padding: 8px; border-radius: 8px; display: grid; gap: 2px; }
+.task-pop li button:hover { background: var(--td-hover); }
+.task-pop li small { color: var(--td-text-secondary); font-size: 12px; }
 .user-chip { display: flex; flex-direction: column; line-height: 1.15; text-align: right; color: #fff; font-size: 12px; white-space: nowrap; }
 .user-chip small { color: #d8ebff; font-size: 11px; }
 .demo-bar {

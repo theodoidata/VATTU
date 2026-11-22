@@ -25,7 +25,7 @@ export default function TransfersPage() {
   const list = useRpc<Transfer[]>('list_transfers', { limit: 300 });
   const [tab, setTab] = useState<Tab>('todo');
   const [creating, setCreating] = useState(() => Boolean(handoff.transferDraft));
-  const [openId, setOpenId] = useState<number | null>(null);
+  const [openId, setOpenId] = useState<number | null>(() => { const id = handoff.openTransferId ?? null; handoff.openTransferId = undefined; return id; });
   const [pushing, setPushing] = useState(false);
 
   const all = list.data ?? [];

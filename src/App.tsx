@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react';
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import {
   LayoutDashboard, Boxes, PackageMinus, PackagePlus, ArrowRightLeft, ClipboardCheck, BarChart3,
   BookOpen, ShieldCheck, LogOut, Loader2, Bell, CircleUserRound,
@@ -6,7 +6,8 @@ import {
 import { DEMO_USERS, demoBackend, preloadDemo, supabase, supabaseBackend, supabaseConfigured, type Backend } from './lib/backend';
 import { Ctx, type AppCtx } from './lib/app-context';
 import { clearRpcCache } from './components/ui';
-import type { Session, Transfer } from './lib/types';
+import { handoff } from './lib/handoff';
+import type { Session, Stocktake, Transfer } from './lib/types';
 import Dashboard from './pages/Dashboard';
 import StockPage from './pages/Stock';
 import UsagePage from './pages/Usage';
@@ -130,6 +131,8 @@ function Shell({ backend, onSignOut, demo }: { backend: Backend; onSignOut: () =
   const [page, setPage] = useState(() => window.location.hash.slice(1) || 'tong-quan');
   const [branchId, setBranchIdState] = useState<number>(0);
   const [inbox, setInbox] = useState(0);
+  const [tasks, setTasks] = useState<Task[]>([]);
+  const [navKey, setNavKey] = useState(0);
 
   const [transferTick, setTransferTick] = useState(0);
 
@@ -165,18 +168,32 @@ function Shell({ backend, onSignOut, demo }: { backend: Backend; onSignOut: () =
       branchId, setBranchId: (id: number) => { store.set('branch-' + session.profile!.id, String(id)); setBranchIdState(id); },
       canAct, canViewAll: has('inv_stock_view_all') || has('inv_all_branches') || has('inv_report_view_all'),
       toast, refreshKey,
-      bump: (fn?: string) => { setRefreshKey(k => k + 1); if (!fn || fn.includes('transfer')) setTransferTick(t => t + 1); },
+      bump: (fn?: string) => { setRefreshKey(k => k + 1); if (!fn || fn.includes('transfer') || fn.includes('stocktake')) setTransferTick(t => t + 1); },
       go: (p: string) => { window.location.hash = p; },
     };
   }, [session, backend, branchId, toast, refreshKey]);
 
-  // Số phiếu điều chuyển đang chờ mình xử lý
+  // Việc đang chờ mình xử lý: phiếu điều chuyển (duyệt / gửi / nhận) + phiếu kiểm kê chờ chốt
   useEffect(() => {
     if (!ctx) return;
     const canSee = ['inv_transfer_request', 'inv_transfer_approve', 'inv_transfer_ship', 'inv_transfer_receive'].some(ctx.has);
-    if (!canSee) return;
-    backend.rpc<Transfer[]>('list_transfers', { status: ['pending', 'approved', 'shipped'] })
-      .then(l => setInbox(l.filter(t => transferNeedsMe(t, ctx)).length)).catch(() => setInbox(0));
+    const STEP: Record<string, string> = { pending: 'Duyệt yêu cầu', approved: 'Gửi hàng', shipped: 'Xác nhận đã nhận' };
+    const tr: Promise<Task[]> = canSee
+      ? backend.rpc<Transfer[]>('list_transfers', { status: ['pending', 'approved', 'shipped'] })
+        .then(l => l.filter(t => transferNeedsMe(t, ctx)).map(t => ({
+          key: 't' + t.id, page: 'dieu-chuyen', transferId: t.id,
+          title: `${STEP[t.status]} · ${t.code}`,
+          sub: `${t.to_branch_name} ← ${t.from_branch_name} · ${t.lines.length} vật tư`,
+        }))).catch(() => [])
+      : Promise.resolve([]);
+    const st: Promise<Task[]> = ctx.has('inv_stocktake_approve') && ctx.canAct(branchId)
+      ? backend.rpc<Stocktake[]>('list_stocktakes', { branch_id: branchId })
+        .then(l => l.filter(s => s.status === 'submitted').map(s => ({
+          key: 's' + s.id, page: 'kiem-ke', stocktakeId: s.id,
+          title: `Chốt kiểm kê #${s.id}`, sub: `${s.branch_name} · ${s.group_name ?? 'Toàn bộ vật tư'}${s.submitted_by_name ? ' · nộp bởi ' + s.submitted_by_name : ''}`,
+        }))).catch(() => [])
+      : Promise.resolve([]);
+    void Promise.all([tr, st]).then(([a, b]) => { setTasks([...a, ...b]); setInbox(a.length); });
     // Chỉ đếm lại khi mở web, đổi chi nhánh hoặc vừa thao tác điều chuyển — không tải lại sau mọi thao tác.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session, backend, branchId, transferTick]);
@@ -227,17 +244,46 @@ function Shell({ backend, onSignOut, demo }: { backend: Backend; onSignOut: () =
               {session.branches.map(b => <option key={b.id} value={b.id}>{branchLabel(b.name)}{b.id === me.branch_id ? ' (của tôi)' : ''}</option>)}
             </select>
           ) : <span className="branch-pill">{branchLabel(me.branch_name ?? '')}</span>}
-          <button className="round-btn" title={inbox > 0 ? `${inbox} phiếu điều chuyển cần bạn xử lý` : 'Không có phiếu điều chuyển cần xử lý'} aria-label="Thông báo"
-            onClick={() => ctx.go('dieu-chuyen')}><Bell size={17} />{inbox > 0 && <em>{inbox}</em>}</button>
+          <TaskBell tasks={tasks} onOpen={t => {
+            if (t.transferId) handoff.openTransferId = t.transferId;
+            if (t.stocktakeId) handoff.openStocktakeId = t.stocktakeId;
+            ctx.go(t.page); setNavKey(k => k + 1);
+          }} />
           <UserMenu name={me.full_name} role={`${me.department_name ?? ''}${me.branch_name ? ' · ' + me.branch_name : ''}`} email={demo ? '' : me.email} onSignOut={onSignOut} />
         </div>
       </header>
       {demoBar}
       <main className={`main ${demo ? 'with-demo' : ''}`}>
-        {current ? current.el() : <div className="notice warning">Tài khoản của bạn chưa được bật quyền nào. Liên hệ BGĐ.</div>}
+        {current ? <Fragment key={navKey}>{current.el()}</Fragment> : <div className="notice warning">Tài khoản của bạn chưa được bật quyền nào. Liên hệ BGĐ.</div>}
       </main>
       {toastMsg && <div className={`toast ${toastMsg.tone}`} onClick={() => setToastMsg(null)}>{toastMsg.msg}</div>}
     </Ctx.Provider>
+  );
+}
+
+type Task = { key: string; page: string; title: string; sub: string; transferId?: number; stocktakeId?: number };
+
+/** Chuông thông báo: số đỏ = số việc đang chờ mình; bấm mở danh sách, bấm từng việc để mở thẳng phiếu */
+function TaskBell({ tasks, onOpen }: { tasks: Task[]; onOpen: (t: Task) => void }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const close = (e: MouseEvent) => { if (!ref.current?.contains(e.target as Node)) setOpen(false); };
+    document.addEventListener('mousedown', close);
+    return () => document.removeEventListener('mousedown', close);
+  }, [open]);
+  return (
+    <div className="user-menu" ref={ref}>
+      <button className="round-btn" onClick={() => setOpen(o => !o)} aria-label="Thông báo" aria-expanded={open}
+        title={tasks.length ? `${tasks.length} việc cần bạn xử lý` : 'Không có việc cần xử lý'}>
+        <Bell size={17} />{tasks.length > 0 && <em>{tasks.length}</em>}</button>
+      {open && <div className="user-pop task-pop">
+        <b>Việc cần xử lý</b>
+        {tasks.length === 0 ? <span className="small" style={{ padding: '8px 0' }}>Không có việc nào đang chờ bạn.</span>
+          : <ul>{tasks.map(t => <li key={t.key}><button onClick={() => { setOpen(false); onOpen(t); }}><b>{t.title}</b><small>{t.sub}</small></button></li>)}</ul>}
+      </div>}
+    </div>
   );
 }
 
