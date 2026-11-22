@@ -7,6 +7,7 @@ import { DEMO_USERS, demoBackend, preloadDemo, supabase, supabaseBackend, supaba
 import { Ctx, type AppCtx } from './lib/app-context';
 import { clearRpcCache } from './components/ui';
 import { handoff } from './lib/handoff';
+import { GuideModal, ProfileModal } from './pages/Account';
 import type { Session, Stocktake, Transfer } from './lib/types';
 import Dashboard from './pages/Dashboard';
 import StockPage from './pages/Stock';
@@ -131,6 +132,7 @@ function Shell({ backend, onSignOut, demo }: { backend: Backend; onSignOut: () =
   const [inbox, setInbox] = useState(0);
   const [tasks, setTasks] = useState<Task[]>([]);
   const [navKey, setNavKey] = useState(0);
+  const [dialog, setDialog] = useState<'profile' | 'guide' | null>(null);
 
   const [transferTick, setTransferTick] = useState(0);
 
@@ -247,13 +249,16 @@ function Shell({ backend, onSignOut, demo }: { backend: Backend; onSignOut: () =
             if (t.stocktakeId) handoff.openStocktakeId = t.stocktakeId;
             ctx.go(t.page); setNavKey(k => k + 1);
           }} />
-          <UserMenu name={me.full_name} role={`${me.department_name ?? ''}${me.branch_name ? ' · ' + me.branch_name : ''}`} email={demo ? '' : me.email} onSignOut={onSignOut} />
+          <UserMenu name={me.full_name} role={`${me.department_name ?? ''}${me.branch_name ? ' · ' + me.branch_name : ''}`}
+            onProfile={() => setDialog('profile')} onGuide={() => setDialog('guide')} onSignOut={onSignOut} />
         </div>
       </header>
       {demoBar}
       <main className={`main ${demo ? 'with-demo' : ''}`}>
         {current ? <Fragment key={navKey}>{current.el()}</Fragment> : <div className="notice warning">Tài khoản của bạn chưa được bật quyền nào. Liên hệ BGĐ.</div>}
       </main>
+      {dialog === 'profile' && <ProfileModal me={me} pages={visible.map(p => p.label)} demo={Boolean(demo)} onClose={() => setDialog(null)} />}
+      {dialog === 'guide' && <GuideModal pages={['Tổng quan', ...visible.map(p => p.label)]} onClose={() => setDialog(null)} />}
       {toastMsg && <div className={`toast ${toastMsg.tone}`} onClick={() => setToastMsg(null)}>{toastMsg.msg}</div>}
     </Ctx.Provider>
   );
@@ -285,8 +290,8 @@ function TaskBell({ tasks, onOpen }: { tasks: Task[]; onOpen: (t: Task) => void 
   );
 }
 
-/** Nút tài khoản tròn: bấm mở khung tên, vị trí và Đăng xuất */
-function UserMenu({ name, role, email, onSignOut }: { name: string; role: string; email: string; onSignOut: () => void }) {
+/** Nút tài khoản: bấm mở khung Tên, Vị trí, Trang cá nhân, Hướng dẫn sử dụng, Đăng xuất */
+function UserMenu({ name, role, onProfile, onGuide, onSignOut }: { name: string; role: string; onProfile: () => void; onGuide: () => void; onSignOut: () => void }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -298,9 +303,13 @@ function UserMenu({ name, role, email, onSignOut }: { name: string; role: string
   return (
     <div className="user-menu" ref={ref}>
       <button className="round-btn" onClick={() => setOpen(o => !o)} title={name} aria-label="Tài khoản" aria-expanded={open}><CircleUserRound size={18} /></button>
-      {open && <div className="user-pop">
-        <b>{name}</b><span>{role}</span>{email && <small>{email}</small>}
-        <button className="btn btn-sm" onClick={onSignOut}><LogOut size={14} /> Đăng xuất</button>
+      {open && <div className="user-pop menu-pop">
+        <div className="menu-head"><b>{name}</b><span>{role}</span></div>
+        <hr />
+        <button className="menu-item" onClick={() => { setOpen(false); onProfile(); }}>Trang cá nhân</button>
+        <button className="menu-item" onClick={() => { setOpen(false); onGuide(); }}>Hướng dẫn sử dụng</button>
+        <hr />
+        <button className="menu-item danger" onClick={onSignOut}>Đăng xuất</button>
       </div>}
     </div>
   );
