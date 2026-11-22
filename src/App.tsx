@@ -100,8 +100,6 @@ function Login({ onDemo }: { onDemo: () => void }) {
     <div className="login-shell">
       <div className="login-card">
         <img className="login-brand" src="/logo.png" alt="THEODOIVATTU — Theo dõi vật tư, quản lý hiệu quả" />
-        <h1>Kho vật tư Nha khoa Quốc Tế</h1>
-        <p className="muted small" style={{ margin: 0 }}>Theo dõi tồn kho, xuất dùng và điều chuyển giữa Kho tổng và các chi nhánh</p>
         {supabaseConfigured ? (
           <form onSubmit={submit}>
             <label className="field"><span>Email</span><input className="input" type="email" autoComplete="username" value={email} onChange={e => setEmail(e.target.value)} required /></label>
