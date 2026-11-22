@@ -91,3 +91,59 @@ export function GuideModal({ pages, onClose }: { pages: string[]; onClose: () =>
     </Modal>
   );
 }
+
+type Rule = { title: string; text: string };
+const COMMON_INTRO = 'Mỗi vị trí chỉ xem và thao tác trong phạm vi quyền đã được BGĐ cấp. Mọi thao tác nhập, xuất, điều chuyển, kiểm kê đều được lưu theo tài khoản thực hiện.';
+const NOTI: Rule = { title: 'Thông báo', text: 'Kiểm tra chuông để nhận việc cần xử lý (duyệt, gửi, nhận hàng, chốt kiểm kê) và các cập nhật điều chuyển của chi nhánh.' };
+const RULES: { match: RegExp; role: string; rules: Rule[] }[] = [
+  { match: /bgđ|bgd|giám đốc/i, role: 'BGĐ', rules: [
+    NOTI,
+    { title: 'Theo dõi toàn hệ thống', text: 'Chọn chi nhánh ở góc trên để xem tồn, cảnh báo dưới tối thiểu và hạn dùng của từng nơi; Báo cáo xem tổng hợp tất cả chi nhánh.' },
+    { title: 'Duyệt & điều phối', text: 'Duyệt yêu cầu điều chuyển, cấp hàng chủ động từ Kho tổng, xử lý các phiếu nhận thiếu.' },
+    { title: 'Danh mục & phân quyền', text: 'Sửa danh mục, tách đơn vị lẻ, sửa phiếu nhập; kích hoạt tài khoản và cấp quyền cho nhân viên.' },
+  ] },
+  { match: /kế toán|ke toan/i, role: 'Kế toán', rules: [
+    NOTI,
+    { title: 'Nhập hàng', text: 'Nhập đúng số lượng, số lô, hạn dùng theo hóa đơn; ghi sai thì dùng nút “Sửa” ở Lịch sử nhập kho.' },
+    { title: 'Phân bổ cho chi nhánh', text: 'Dùng “Cấp hàng đi” để chuyển hàng chủ động; hộp không đủ chia thì “Tách đơn vị lẻ” rồi cấp theo đơn vị nhỏ.' },
+    { title: 'Báo cáo', text: 'Đối chiếu tồn, lượng xuất dùng và điều chuyển theo kỳ; xuất Excel khi cần.' },
+  ] },
+  { match: /quản lý|quan ly|trưởng/i, role: 'Quản lý chi nhánh', rules: [
+    NOTI,
+    { title: 'Duyệt điều chuyển', text: 'Duyệt hoặc từ chối yêu cầu xin hàng gửi đến chi nhánh mình; chỉ duyệt khi chi nhánh vẫn đủ mức tối thiểu.' },
+    { title: 'Kiểm kê', text: 'Xem chênh lệch sau khi nhân viên nộp phiếu, kiểm tra lại các dòng lệch lớn rồi mới “Chốt & điều chỉnh tồn”.' },
+    { title: 'Tồn tối thiểu', text: 'Đặt mức tối thiểu phù hợp lượng dùng của chi nhánh để cảnh báo sắp hết đúng lúc.' },
+  ] },
+  { match: /kho|phụ tá|phu ta/i, role: 'Nhân viên kho / Phụ tá', rules: [
+    NOTI,
+    { title: 'Xuất dùng hằng ngày', text: 'Ghi lượng vật tư đã dùng mỗi cuối ca; làm dở thì bấm “Lưu tạm”, không để dồn nhiều ngày.' },
+    { title: 'Gửi – nhận hàng', text: 'Đếm hàng thực tế trước khi xác nhận; nhận thiếu thì sửa số “Thực nhận” và ghi rõ lý do.' },
+    { title: 'Kiểm kê', text: 'Đếm theo từng lô, không còn hàng thì để 0; vật tư có quy đổi điền số hộp và số lẻ.' },
+  ] },
+  { match: /bác sĩ|bac si/i, role: 'Bác sĩ', rules: [
+    NOTI,
+    { title: 'Xem tồn trước khi dùng', text: 'Kiểm tra tồn và hạn dùng ở Tồn kho trước ca điều trị cần vật tư đặc biệt.' },
+    { title: 'Ghi xuất dùng', text: 'Ghi đúng vật tư và số lượng đã dùng; hỏng / rơi vỡ chọn đúng lý do.' },
+    { title: 'Báo thiếu', text: 'Thấy vật tư sắp hết thì báo Quản lý chi nhánh để xin điều chuyển kịp thời.' },
+  ] },
+];
+
+/** Nút "?" — Quy tắc theo vị trí công việc của người đang đăng nhập */
+export function RoleGuideModal({ me, onClose, onDetail }: { me: Profile; onClose: () => void; onDetail: () => void }) {
+  const dept = me.department_name ?? '';
+  const r = RULES.find(x => x.match.test(dept));
+  const [contact, setContact] = useState(false);
+  const rules = r?.rules ?? [NOTI];
+  return (
+    <Modal size="medium" title={<span className="guide-title"><small>HƯỚNG DẪN SỬ DỤNG</small>Quy tắc dành cho {r?.role ?? (dept || 'bạn')}</span>} onClose={onClose}>
+      <p className="guide-intro">{COMMON_INTRO}</p>
+      <div className="guide-cards">
+        {rules.map(x => <div key={x.title} className="guide-card"><b>{x.title}</b><span>{x.text}</span></div>)}
+        <div className="guide-card"><b>Bảo mật</b><span>Không chia sẻ tài khoản; thông tin vật tư, nhà cung cấp chỉ dùng cho công việc được giao.</span></div>
+      </div>
+      {contact && <div className="notice" style={{ marginTop: 12 }}>Cần thêm quyền, báo lỗi số liệu hoặc quên mật khẩu: liên hệ BGĐ hoặc người phụ trách phân quyền của hệ thống.</div>}
+      <button className="btn btn-primary guide-btn" onClick={() => setContact(true)}>Liên hệ Admin</button>
+      <button className="btn btn-ghost btn-sm guide-more" onClick={onDetail}>Xem hướng dẫn chi tiết từng trang</button>
+    </Modal>
+  );
+}

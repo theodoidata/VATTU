@@ -1,13 +1,14 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import {
   LayoutDashboard, Boxes, PackageMinus, PackagePlus, ArrowRightLeft, ClipboardCheck, BarChart3,
-  BookOpen, ShieldCheck, LogOut, Loader2, Bell, CircleUserRound,
+  BookOpen, ShieldCheck, LogOut, Loader2, CircleHelp, CircleUserRound,
 } from 'lucide-react';
 import { DEMO_USERS, demoBackend, preloadDemo, supabase, supabaseBackend, supabaseConfigured, type Backend } from './lib/backend';
 import { Ctx, type AppCtx } from './lib/app-context';
 import { clearRpcCache } from './components/ui';
 import { handoff } from './lib/handoff';
-import { GuideModal, ProfileModal } from './pages/Account';
+import { GuideModal, ProfileModal, RoleGuideModal } from './pages/Account';
+import { NotiBell, type Noti } from './components/Notifications';
 import type { Session, Stocktake, Transfer } from './lib/types';
 import Dashboard from './pages/Dashboard';
 import StockPage from './pages/Stock';
@@ -130,9 +131,9 @@ function Shell({ backend, onSignOut, demo }: { backend: Backend; onSignOut: () =
   const [page, setPage] = useState(() => window.location.hash.slice(1) || 'tong-quan');
   const [branchId, setBranchIdState] = useState<number>(0);
   const [inbox, setInbox] = useState(0);
-  const [tasks, setTasks] = useState<Task[]>([]);
+  const [notis, setNotis] = useState<Noti[]>([]);
   const [navKey, setNavKey] = useState(0);
-  const [dialog, setDialog] = useState<'profile' | 'guide' | null>(null);
+  const [dialog, setDialog] = useState<'profile' | 'guide' | 'rules' | null>(null);
 
   const [transferTick, setTransferTick] = useState(0);
 
@@ -178,22 +179,42 @@ function Shell({ backend, onSignOut, demo }: { backend: Backend; onSignOut: () =
     if (!ctx) return;
     const canSee = ['inv_transfer_request', 'inv_transfer_approve', 'inv_transfer_ship', 'inv_transfer_receive'].some(ctx.has);
     const STEP: Record<string, string> = { pending: 'Duyệt yêu cầu', approved: 'Gửi hàng', shipped: 'Xác nhận đã nhận' };
-    const tr: Promise<Task[]> = canSee
+    const tr: Promise<Noti[]> = canSee
       ? backend.rpc<Transfer[]>('list_transfers', { status: ['pending', 'approved', 'shipped'] })
         .then(l => l.filter(t => transferNeedsMe(t, ctx)).map(t => ({
-          key: 't' + t.id, page: 'dieu-chuyen', transferId: t.id,
+          key: `t${t.id}-${t.status}`, kind: 'task' as const, page: 'dieu-chuyen', transferId: t.id,
+          at: t.shipped_at ?? t.approved_at ?? t.requested_at,
           title: `${STEP[t.status]} · ${t.code}`,
           sub: `${t.to_branch_name} ← ${t.from_branch_name} · ${t.lines.length} vật tư`,
         }))).catch(() => [])
       : Promise.resolve([]);
-    const st: Promise<Task[]> = ctx.has('inv_stocktake_approve') && ctx.canAct(branchId)
+    const st: Promise<Noti[]> = ctx.has('inv_stocktake_approve') && ctx.canAct(branchId)
       ? backend.rpc<Stocktake[]>('list_stocktakes', { branch_id: branchId })
         .then(l => l.filter(s => s.status === 'submitted').map(s => ({
-          key: 's' + s.id, page: 'kiem-ke', stocktakeId: s.id,
+          key: `s${s.id}-submitted`, kind: 'task' as const, page: 'kiem-ke', stocktakeId: s.id, at: s.submitted_at,
           title: `Chốt kiểm kê #${s.id}`, sub: `${s.branch_name} · ${s.group_name ?? 'Toàn bộ vật tư'}${s.submitted_by_name ? ' · nộp bởi ' + s.submitted_by_name : ''}`,
         }))).catch(() => [])
       : Promise.resolve([]);
-    void Promise.all([tr, st]).then(([a, b]) => { setTasks([...a, ...b]); setInbox(a.length); });
+    // Cập nhật điều chuyển của chi nhánh mình trong 30 ngày (bên kia đã duyệt / gửi / nhận / từ chối / hủy)
+    const mine = (b: number) => session?.profile?.branch_id === b || (ctx.has('inv_all_branches') && b === branchId);
+    const up: Promise<Noti[]> = canSee
+      ? backend.rpc<Transfer[]>('list_transfers', { status: ['approved', 'shipped', 'received', 'rejected', 'cancelled'], from: addDaysISO(session?.today ?? new Date().toISOString(), -30), limit: 40 })
+        .then(l => l.flatMap((t): Noti[] => {
+          if (transferNeedsMe(t, ctx)) return [];
+          const base = { kind: 'update' as const, page: 'dieu-chuyen', transferId: t.id, key: `u${t.id}-${t.status}` };
+          const sub = `${t.to_branch_name} ← ${t.from_branch_name} · ${t.lines.length} vật tư`;
+          if (t.status === 'approved' && mine(t.to_branch_id)) return [{ ...base, title: `${t.from_branch_name} đã duyệt yêu cầu ${t.code}`, sub, at: t.approved_at }];
+          if (t.status === 'shipped' && mine(t.to_branch_id)) return [{ ...base, title: `${t.from_branch_name} đã gửi hàng ${t.code}`, sub, at: t.shipped_at }];
+          if (t.status === 'received' && mine(t.from_branch_id)) return [{ ...base, title: `${t.to_branch_name} đã nhận hàng ${t.code}${t.has_shortage ? ' (nhận thiếu)' : ''}`, sub, at: t.received_at }];
+          if (t.status === 'rejected' && mine(t.to_branch_id)) return [{ ...base, title: `${t.from_branch_name} từ chối yêu cầu ${t.code}`, sub: t.reject_reason ? `Lý do: ${t.reject_reason}` : sub, at: t.closed_at }];
+          if (t.status === 'cancelled' && mine(t.from_branch_id)) return [{ ...base, title: `${t.to_branch_name} đã hủy yêu cầu ${t.code}`, sub, at: t.closed_at }];
+          return [];
+        })).catch(() => [])
+      : Promise.resolve([]);
+    void Promise.all([tr, st, up]).then(([a, b, c]) => {
+      const byTime = (x: Noti, y: Noti) => String(y.at ?? '').localeCompare(String(x.at ?? ''));
+      setNotis([...[...a, ...b].sort(byTime), ...c.sort(byTime)]); setInbox(a.length);
+    });
     // Chỉ đếm lại khi mở web, đổi chi nhánh hoặc vừa thao tác điều chuyển — không tải lại sau mọi thao tác.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session, backend, branchId, transferTick]);
@@ -244,13 +265,14 @@ function Shell({ backend, onSignOut, demo }: { backend: Backend; onSignOut: () =
               {session.branches.map(b => <option key={b.id} value={b.id}>{branchLabel(b.name)}{b.id === me.branch_id ? ' (của tôi)' : ''}</option>)}
             </select>
           ) : <span className="branch-pill">{branchLabel(me.branch_name ?? '')}</span>}
-          <TaskBell tasks={tasks} onOpen={t => {
+          <button className="round-btn" title="Hướng dẫn sử dụng" aria-label="Hướng dẫn sử dụng" onClick={() => setDialog('rules')}><CircleHelp size={17} /></button>
+          <NotiBell uid={me.id} items={notis} onOpen={t => {
             if (t.transferId) handoff.openTransferId = t.transferId;
             if (t.stocktakeId) handoff.openStocktakeId = t.stocktakeId;
             ctx.go(t.page); setNavKey(k => k + 1);
           }} />
           <UserMenu name={me.full_name} role={`${me.department_name ?? ''}${me.branch_name ? ' · ' + me.branch_name : ''}`}
-            onProfile={() => setDialog('profile')} onGuide={() => setDialog('guide')} onSignOut={onSignOut} />
+            onProfile={() => setDialog('profile')} onGuide={() => setDialog('rules')} onSignOut={onSignOut} />
         </div>
       </header>
       {demoBar}
@@ -258,35 +280,10 @@ function Shell({ backend, onSignOut, demo }: { backend: Backend; onSignOut: () =
         {current ? <Fragment key={navKey}>{current.el()}</Fragment> : <div className="notice warning">Tài khoản của bạn chưa được bật quyền nào. Liên hệ BGĐ.</div>}
       </main>
       {dialog === 'profile' && <ProfileModal me={me} pages={visible.map(p => p.label)} demo={Boolean(demo)} onClose={() => setDialog(null)} />}
+      {dialog === 'rules' && <RoleGuideModal me={me} onClose={() => setDialog(null)} onDetail={() => setDialog('guide')} />}
       {dialog === 'guide' && <GuideModal pages={['Tổng quan', ...visible.map(p => p.label)]} onClose={() => setDialog(null)} />}
       {toastMsg && <div className={`toast ${toastMsg.tone}`} onClick={() => setToastMsg(null)}>{toastMsg.msg}</div>}
     </Ctx.Provider>
-  );
-}
-
-type Task = { key: string; page: string; title: string; sub: string; transferId?: number; stocktakeId?: number };
-
-/** Chuông thông báo: số đỏ = số việc đang chờ mình; bấm mở danh sách, bấm từng việc để mở thẳng phiếu */
-function TaskBell({ tasks, onOpen }: { tasks: Task[]; onOpen: (t: Task) => void }) {
-  const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    if (!open) return;
-    const close = (e: MouseEvent) => { if (!ref.current?.contains(e.target as Node)) setOpen(false); };
-    document.addEventListener('mousedown', close);
-    return () => document.removeEventListener('mousedown', close);
-  }, [open]);
-  return (
-    <div className="user-menu" ref={ref}>
-      <button className="round-btn" onClick={() => setOpen(o => !o)} aria-label="Thông báo" aria-expanded={open}
-        title={tasks.length ? `${tasks.length} việc cần bạn xử lý` : 'Không có việc cần xử lý'}>
-        <Bell size={17} />{tasks.length > 0 && <em>{tasks.length}</em>}</button>
-      {open && <div className="user-pop task-pop">
-        <b>Việc cần xử lý</b>
-        {tasks.length === 0 ? <span className="small" style={{ padding: '8px 0' }}>Không có việc nào đang chờ bạn.</span>
-          : <ul>{tasks.map(t => <li key={t.key}><button onClick={() => { setOpen(false); onOpen(t); }}><b>{t.title}</b><small>{t.sub}</small></button></li>)}</ul>}
-      </div>}
-    </div>
   );
 }
 
@@ -314,6 +311,8 @@ function UserMenu({ name, role, onProfile, onGuide, onSignOut }: { name: string;
     </div>
   );
 }
+
+const addDaysISO = (d: string, n: number) => new Date(Date.parse(d.slice(0, 10)) + n * 86400000).toISOString().slice(0, 10);
 
 /** Kho tổng / Xưởng răng giữ nguyên tên, chi nhánh thường thêm "CN" */
 function branchLabel(name: string) {

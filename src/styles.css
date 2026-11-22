@@ -49,7 +49,7 @@ a { color: var(--td-color-primary); }
 .nav::-webkit-scrollbar { display: none; }
 .nav button {
   border: 0; background: transparent; color: #e7f2ff; display: flex; align-items: center; gap: 6px;
-  height: 32px; padding: 0 10px; border-radius: 6px; font-size: 13px; white-space: nowrap;
+  height: 32px; padding: 0 10px; border-radius: 6px; font-size: 14px; font-weight: 700; white-space: nowrap;
 }
 .nav button:hover, .nav button.active { background: #ffffff24; color: #fff; }
 .nav button em { background: #e95555; color: #fff; border-radius: 12px; padding: 1px 6px; font-size: 10px; font-style: normal; font-weight: 700; }
@@ -214,6 +214,7 @@ table.data tfoot td { font-weight: 700; background: #f7f9fb; }
 .modal { background: #fff; border-radius: var(--td-radius-modal); width: min(760px, 100%); max-height: calc(100vh - 32px); display: flex; flex-direction: column; box-shadow: var(--td-elevation-popover); }
 .modal.wide { width: min(1080px, 100%); }
 .modal.narrow { width: min(440px, 100%); }
+.modal.medium { width: min(560px, 100%); }
 .modal-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 14px 18px; border-bottom: 1px solid var(--td-border-subtle); }
 .modal-head h2 { margin: 0; font-size: 17px; }
 .modal-body { padding: 14px 18px; overflow: auto; }
@@ -384,3 +385,34 @@ table.data.fixed-cols th { white-space: normal; line-height: 1.25; }
 .qty-pack .qp-u { font-size: 12px; color: var(--td-text-muted); min-width: 22px; }
 .select.unit-box { width: 84px; }
 .select.unit-box:disabled { opacity: 1; color: var(--td-text); background-color: var(--td-surface-2); cursor: default; }
+
+/* Khung Thông báo */
+.noti-pop { width: 380px; max-height: 72vh; overflow: auto; padding: 14px 10px 10px; gap: 0; }
+.noti-head { display: flex; align-items: center; gap: 10px; padding: 0 8px 10px; }
+.noti-head b { font-size: 15px; }
+.noti-head small { color: var(--td-text-secondary); font-size: 12px; }
+.link-btn { border: 0; background: transparent; padding: 0; font-size: 12px; color: var(--td-color-primary); }
+.link-btn:disabled { color: var(--td-text-muted); opacity: .7; }
+.noti-tabs { display: flex; gap: 6px; padding: 0 8px 10px; border-bottom: 1px solid var(--td-border-subtle); }
+.noti-tabs button { height: 32px; border: 0; background: transparent; border-radius: 8px; padding: 0 12px; font-weight: 500; color: var(--td-text-secondary); }
+.noti-tabs button.active { background: var(--td-color-selected); color: var(--td-color-primary); font-weight: 600; }
+.noti-empty { padding: 16px 8px 6px; font-size: 13px; color: var(--td-text-secondary); }
+.noti-pop ul { list-style: none; margin: 6px 0 0; padding: 0; }
+.noti-pop li button { width: 100%; text-align: left; border: 0; background: transparent; padding: 8px; border-radius: 8px; display: grid; gap: 2px; }
+.noti-pop li button:hover { background: var(--td-hover); }
+.noti-pop li.unread button { background: #f3f8ff; }
+.noti-pop li.unread .noti-title::before { content: ''; display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--td-color-primary); margin-right: 6px; vertical-align: 2px; }
+.noti-title { font-weight: 600; font-size: 13px; }
+.noti-tag { font-style: normal; font-size: 10px; font-weight: 700; color: var(--td-danger); background: var(--td-danger-soft); border-radius: 6px; padding: 1px 6px; margin-right: 6px; }
+.noti-pop li small { color: var(--td-text-secondary); font-size: 12px; }
+
+/* Khung Hướng dẫn theo vị trí */
+.guide-title { display: grid; gap: 6px; font-size: 19px; }
+.guide-title small { font-size: 11px; font-weight: 700; letter-spacing: .6px; color: var(--td-text-muted); }
+.guide-intro { margin: 0 0 14px; color: var(--td-text-secondary); line-height: 1.6; }
+.guide-cards { display: grid; gap: 10px; }
+.guide-card { background: #eef5ff; border-radius: 10px; padding: 12px 14px; display: grid; gap: 4px; }
+.guide-card b { font-size: 14px; }
+.guide-card span { font-size: 13px; color: var(--td-text-secondary); }
+.guide-btn { width: 100%; justify-content: center; margin-top: 16px; }
+.guide-more { display: flex; margin: 8px auto 0; }
