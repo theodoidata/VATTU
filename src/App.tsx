@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import {
   LayoutDashboard, Boxes, PackageMinus, PackagePlus, ArrowRightLeft, ClipboardCheck, BarChart3,
-  BookOpen, ShieldCheck, LogOut, Loader2, Stethoscope,
+  BookOpen, ShieldCheck, LogOut, Loader2, Bell, CircleUserRound,
 } from 'lucide-react';
 import { DEMO_USERS, demoBackend, preloadDemo, supabase, supabaseBackend, supabaseConfigured, type Backend } from './lib/backend';
 import { Ctx, type AppCtx } from './lib/app-context';
@@ -98,7 +98,7 @@ function Login({ onDemo }: { onDemo: () => void }) {
   return (
     <div className="login-shell">
       <div className="login-card">
-        <div className="login-logo"><Stethoscope size={26} /></div>
+        <img className="login-brand" src="/logo.png" alt="THEODOIVATTU — Theo dõi vật tư, quản lý hiệu quả" />
         <h1>Kho vật tư Nha khoa Quốc Tế</h1>
         <p className="muted small" style={{ margin: 0 }}>Theo dõi tồn kho, xuất dùng và điều chuyển giữa Kho tổng và các chi nhánh</p>
         {supabaseConfigured ? (
@@ -213,7 +213,7 @@ function Shell({ backend, onSignOut, demo }: { backend: Backend; onSignOut: () =
   return (
     <Ctx.Provider value={ctx}>
       <header className="topbar">
-        <div className="brand"><b>NHA KHOA QUỐC TẾ</b><span>KHO VẬT TƯ</span></div>
+        <div className="brand"><img src="/logo-white.png" alt="" /><div><b>THEODOIVATTU</b><span>THEO DÕI VẬT TƯ - QUẢN LÝ HIỆU QUẢ</span></div></div>
         <nav className="nav">
           {visible.map(p => (
             <button key={p.key} className={current?.key === p.key ? 'active' : ''} onClick={() => ctx.go(p.key)} title={p.label}>
@@ -223,12 +223,13 @@ function Shell({ backend, onSignOut, demo }: { backend: Backend; onSignOut: () =
         </nav>
         <div className="topbar-tools">
           {ctx.canViewAll ? (
-            <select value={branchId} onChange={e => ctx.setBranchId(Number(e.target.value))} aria-label="Chi nhánh đang xem">
+            <select className="branch-pill" value={branchId} onChange={e => ctx.setBranchId(Number(e.target.value))} aria-label="Chi nhánh đang xem">
               {session.branches.map(b => <option key={b.id} value={b.id}>{branchLabel(b.name)}{b.id === me.branch_id ? ' (của tôi)' : ''}</option>)}
             </select>
-          ) : <span className="badge" style={{ background: '#ffffff26', color: '#fff' }}>{branchLabel(me.branch_name ?? '')}</span>}
-          <div className="user-chip"><b>{me.full_name}</b><small>{me.department_name}{me.branch_name ? ' · ' + me.branch_name : ''}</small></div>
-          <button className="icon-btn" onClick={onSignOut} title="Đăng xuất" aria-label="Đăng xuất"><LogOut size={17} /></button>
+          ) : <span className="branch-pill">{branchLabel(me.branch_name ?? '')}</span>}
+          <button className="round-btn" title={inbox > 0 ? `${inbox} phiếu điều chuyển cần bạn xử lý` : 'Không có phiếu điều chuyển cần xử lý'} aria-label="Thông báo"
+            onClick={() => ctx.go('dieu-chuyen')}><Bell size={17} />{inbox > 0 && <em>{inbox}</em>}</button>
+          <UserMenu name={me.full_name} role={`${me.department_name ?? ''}${me.branch_name ? ' · ' + me.branch_name : ''}`} email={demo ? '' : me.email} onSignOut={onSignOut} />
         </div>
       </header>
       {demoBar}
@@ -237,6 +238,27 @@ function Shell({ backend, onSignOut, demo }: { backend: Backend; onSignOut: () =
       </main>
       {toastMsg && <div className={`toast ${toastMsg.tone}`} onClick={() => setToastMsg(null)}>{toastMsg.msg}</div>}
     </Ctx.Provider>
+  );
+}
+
+/** Nút tài khoản tròn: bấm mở khung tên, vị trí và Đăng xuất */
+function UserMenu({ name, role, email, onSignOut }: { name: string; role: string; email: string; onSignOut: () => void }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const close = (e: MouseEvent) => { if (!ref.current?.contains(e.target as Node)) setOpen(false); };
+    document.addEventListener('mousedown', close);
+    return () => document.removeEventListener('mousedown', close);
+  }, [open]);
+  return (
+    <div className="user-menu" ref={ref}>
+      <button className="round-btn" onClick={() => setOpen(o => !o)} title={name} aria-label="Tài khoản" aria-expanded={open}><CircleUserRound size={18} /></button>
+      {open && <div className="user-pop">
+        <b>{name}</b><span>{role}</span>{email && <small>{email}</small>}
+        <button className="btn btn-sm" onClick={onSignOut}><LogOut size={14} /> Đăng xuất</button>
+      </div>}
+    </div>
   );
 }
 
