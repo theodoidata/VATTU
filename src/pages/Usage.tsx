@@ -163,11 +163,11 @@ export default function UsagePage() {
             const over = r && Number(l.qty) > Number(l.reason === 'Hủy hết hạn' ? r.qty : r.usable_qty);
             return (
               <div key={l.key} className="wiz-card">
-                <div className="wiz-card-head">
+                <div className="wiz-card-head wiz-line">
                   <div><ItemPicker items={pickItems} value={l.item_id} placeholder={`Tìm vật tư ${idx + 1}…`} onChange={id => set(l.key, { item_id: id, lot_id: null })}
                     exclude={lines.filter(x => x.key !== l.key && x.reason === l.reason).map(x => x.item_id!).filter(Boolean)} /></div>
-                  {r && <span className="wiz-qty"><QtyInput value={l.qty} onChange={v => set(l.key, { qty: v })} unit={r} bad={Boolean(over)} placeholder="0" />
-                    {!(r.purchase_unit && Number(r.purchase_factor) > 1) && <span className="qp-u">{r.unit}</span>}</span>}
+                  {r ? <span className="wiz-qty"><QtyInput value={l.qty} onChange={v => set(l.key, { qty: v })} unit={r} bad={Boolean(over)} placeholder="0" />
+                    {!(r.purchase_unit && Number(r.purchase_factor) > 1) && <span className="qp-u">{r.unit}</span>}</span> : <span className="wiz-qty"><input className="input sm num" disabled placeholder="SL" aria-label="Số lượng" /><span className="qp-u" /></span>}
                   <button className="btn btn-ghost btn-sm icon-only" aria-label="Xóa dòng" onClick={() => setLines(ls => ls.length > 1 ? ls.filter(x => x.key !== l.key) : [newLine()])}><Trash2 size={15} /></button>
                 </div>
                 {r && <span className={`small ${over ? 'text-danger' : 'muted'}`}>{over ? 'Vượt tồn — ' : ''}còn {fmtUnits(r.usable_qty, r)}</span>}

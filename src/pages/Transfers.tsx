@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Plus, Trash2, Send, Check, X, PackageCheck, Truck, Lightbulb, Download, ChevronLeft, ChevronRight } from 'lucide-react';
 import { useApp, type AppCtx } from '../lib/app-context';
 import { Badge, Empty, Field, ItemPicker, ItemQtyInput, Loading, UnitCell, useIsMobile, Modal, PageHeader, ReasonModal, useAction, useRpc, usePaged, useUnits } from '../components/ui';
-import { TRANSFER_STATUS, fmtDate, fmtDateTime, fmtQty, fmtUnits } from '../lib/format';
+import { TRANSFER_STATUS, fmtDate, fmtDateTime, fmtQty, fmtUnits, hasPack } from '../lib/format';
 import type { Item, MatrixRow, StockRow, Transfer, TransferLine } from '../lib/types';
 import { handoff } from '../lib/handoff';
 import { exportExcel, sheet } from '../lib/excel';
@@ -222,10 +222,11 @@ function CreateModal({ onClose, onCreated }: { onClose: () => void; onCreated: (
             const it = l.item_id ? items.data?.find(i => i.id === l.item_id) : undefined;
             return (
               <div key={l.key} className="wiz-card">
-                <div className="wiz-card-head">
+                <div className="wiz-card-head wiz-line">
                   <div><ItemPicker items={activeItems} value={l.item_id} placeholder={`Tìm vật tư ${idx + 1}…`}
                     onChange={id => set(l.key, { item_id: id, manual: false })} exclude={lines.filter(x => x.key !== l.key).map(x => x.item_id!).filter(Boolean)} /></div>
-                  {l.item_id && <span className="wiz-qty"><ItemQtyInput itemId={l.item_id} unit={it?.unit} value={l.qty} onChange={v => set(l.key, { qty: v })} showUnit /></span>}
+                  {l.item_id ? <span className="wiz-qty"><ItemQtyInput itemId={l.item_id} unit={it?.unit} value={l.qty} onChange={v => set(l.key, { qty: v })} />
+                    {!hasPack(it) && <span className="qp-u">{it?.unit}</span>}</span> : <span className="wiz-qty"><input className="input sm num" disabled placeholder="SL" aria-label="Số lượng" /><span className="qp-u" /></span>}
                   <button className="btn btn-ghost btn-sm icon-only" aria-label="Xóa dòng"
                     onClick={() => setLines(ls => ls.length > 1 ? ls.filter(x => x.key !== l.key) : [{ key: seq++, item_id: null, qty: '', src: null, manual: false }])}><Trash2 size={15} /></button>
                 </div>

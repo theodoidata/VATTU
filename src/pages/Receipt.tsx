@@ -146,13 +146,13 @@ function ReceiptForm() {
             const pack = hasPack(it);
             return (
               <div key={l.key} className="wiz-card">
-                <div className="wiz-card-head">
+                <div className="wiz-card-head wiz-line">
                   <div><ItemPicker items={active} value={l.item_id} placeholder={`Tìm vật tư ${idx + 1}…`}
                     onChange={id => setL(l.key, { item_id: id, unit_mode: byId.get(id)?.purchase_unit ? 'purchase' : 'base' })}
                     exclude={form.lines.filter(x => x.key !== l.key).map(x => x.item_id!).filter(Boolean)} /></div>
-                  {it && <span className="wiz-qty">{pack ? <QtyInput value={l.qty === '' ? '' : String(baseQty(l, it))} onChange={v => setL(l.key, { qty: v, unit_mode: 'base' })} unit={it} placeholder="0" />
+                  {it ? <span className="wiz-qty">{pack ? <QtyInput value={l.qty === '' ? '' : String(baseQty(l, it))} onChange={v => setL(l.key, { qty: v, unit_mode: 'base' })} unit={it} placeholder="0" />
                     : <><input className="input sm num" type="number" min={0} step="any" placeholder="SL" value={l.qty}
-                        onChange={e => setL(l.key, { qty: e.target.value, unit_mode: 'base' })} /><span className="qp-u">{it.unit}</span></>}</span>}
+                        onChange={e => setL(l.key, { qty: e.target.value, unit_mode: 'base' })} /><span className="qp-u">{it.unit}</span></>}</span> : <span className="wiz-qty"><input className="input sm num" disabled placeholder="SL" aria-label="Số lượng" /><span className="qp-u" /></span>}
                   <button className="btn btn-ghost btn-sm icon-only" aria-label="Xóa dòng" onClick={() => setLines(ls => ls.length > 1 ? ls.filter(x => x.key !== l.key) : [newLine()])}><Trash2 size={15} /></button>
                 </div>
                 {it?.track_lot && <span className="small text-warning">Cần nhập số lô / hạn dùng ở bước sau</span>}

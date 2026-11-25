@@ -500,11 +500,19 @@ table.data.fixed-cols th { white-space: normal; line-height: 1.25; }
 
 @media (max-width: 760px) { .toast { top: 64px; bottom: auto; left: 12px; right: 12px; } .hide-mobile { display: none !important; } }
 
-/* Dòng vật tư trong popup: tên vật tư + số lượng cùng một hàng (tên dài thì bị che bớt) */
-.wiz-card-head { align-items: center; }
-.wiz-qty { flex: none; display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
-.wiz-qty .input.num, .wiz-qty > input { width: 60px !important; padding: 0 6px; text-align: right; }
-.wiz-qty .qty-pack .input { width: 44px !important; }
-.wiz-qty .qp-u, .wiz-qty .muted.small { font-size: 12px; color: var(--td-text-muted); }
+/* Dòng vật tư trong popup: lưới cố định [tên vật tư | số lượng + đơn vị | xóa] — mọi dòng cùng kích thước, tên dài thì bị che bớt */
 .wiz-card { gap: 4px; }
-.wiz-card-head .combo .input { text-overflow: ellipsis; }
+.wiz-card-head.wiz-line { display: grid; grid-template-columns: minmax(0, 1fr) 116px 32px; gap: 8px; align-items: center; }
+.wiz-line > div, .wiz-line .combo { display: contents; }
+.wiz-line .combo > input { grid-column: 1; grid-row: 1; min-width: 0; }
+.wiz-line > .wiz-qty { grid-column: 2; grid-row: 1; }
+.wiz-line > button { grid-column: 3; grid-row: 1; }
+.wiz-line .combo .input { text-overflow: ellipsis; }
+.wiz-qty { width: 116px; display: flex; align-items: center; gap: 4px; }
+.wiz-qty > input, .wiz-qty > .input { flex: 1 1 0; min-width: 0; width: auto !important; padding: 0 6px; text-align: right; }
+.wiz-qty > .qp-u { flex: none; width: 34px; font-size: 12px; color: var(--td-text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.wiz-qty > .qty-pack { width: 100%; gap: 2px; }
+.wiz-qty > .qty-pack .input { flex: 1 1 0; min-width: 0; width: auto !important; padding: 0 4px; }
+.wiz-qty > .qty-pack .qp-u { min-width: 0; font-size: 11px; }
+/* Gợi ý tìm vật tư: dòng riêng ngay dưới, trải hết bề ngang thẻ (ô tên vật tư không bị giãn) */
+.wiz-line .combo-list { position: static !important; grid-column: 1 / -1; grid-row: 2; width: auto !important; margin-top: 0 !important; }
