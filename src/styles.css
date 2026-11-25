@@ -528,3 +528,11 @@ table.data.fixed-cols th { white-space: normal; line-height: 1.25; }
 @media (max-width: 760px) {
   .cards-sm td, .cards-sm td.nowrap, .cards-sm td * { white-space: normal; overflow-wrap: anywhere; }
 }
+
+/* Kết quả tìm nhanh ở Tồn kho (điện thoại): mỗi vật tư 1 hàng — tên | tồn */
+.quick-list { display: grid; border: 1px solid var(--td-border-subtle); border-radius: 12px; overflow: hidden; background: #fff; }
+.quick-list button { display: flex; align-items: center; justify-content: space-between; gap: 10px; height: auto; min-height: 44px; padding: 8px 12px;
+  border: 0; border-bottom: 1px solid var(--td-border-subtle); background: #fff; text-align: left; font-size: 14px; color: var(--td-text); }
+.quick-list button:last-child { border-bottom: 0; }
+.quick-list .ql-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.quick-list b { flex: none; white-space: nowrap; }

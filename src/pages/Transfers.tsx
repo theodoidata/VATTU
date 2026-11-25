@@ -345,11 +345,57 @@ function PushModal({ onClose, onCreated }: { onClose: () => void; onCreated: (id
   const valid = lines.filter(l => l.item_id && Number(l.qty) > 0);
   const over = valid.filter(l => Number(l.qty) > Number(byId.get(l.item_id!)?.usable_qty ?? 0));
   const fromName = branches.find(b => b.id === branchId)?.name;
+  const isMobile = useIsMobile();
+  const [step, setStep] = useState(1);
   async function submit() {
     const r = await run<Transfer>('push_transfer', { from_branch_id: branchId, to_branch_id: to, note, lines: valid.map(l => ({ item_id: l.item_id, qty: Number(l.qty) })) },
       `Đã gửi hàng, kho ${fromName} đã được trừ`);
     if (r) onCreated(r.id);
   }
+  const emptyText = `${fromName} chưa có vật tư nào còn hàng để cấp`;
+  if (isMobile) return (
+    <Modal onClose={onClose} title={<span className="guide-title"><small>{(fromName ?? '').toUpperCase()} CẤP HÀNG ĐI · BƯỚC {step}/2</small>{step === 1 ? 'Gửi đến & vật tư' : 'Xác nhận gửi hàng'}</span>}
+      footer={<>
+        {step > 1 ? <button className="btn" onClick={() => setStep(1)}><ChevronLeft size={16} /> Quay lại</button> : <button className="btn" onClick={onClose}>Đóng</button>}
+        <span className="spacer" />
+        {step === 1 ? <button className="btn btn-primary" disabled={!valid.length || !to || over.length > 0} onClick={() => setStep(2)}>Tiếp ({valid.length} vật tư) <ChevronRight size={16} /></button>
+          : <button className="btn btn-primary" disabled={busy || !valid.length || !to || over.length > 0} onClick={submit}><Truck size={16} /> Gửi hàng</button>}
+      </>}>
+      <div className="wiz-steps">{[1, 2].map(i => <span key={i} className={i <= step ? 'on' : ''} />)}</div>
+      {step === 1 && <>
+        <Field label="Gửi đến chi nhánh">
+          <select className="select" value={to} onChange={e => setTo(e.target.value ? Number(e.target.value) : '')}>
+            <option value="">— Chọn chi nhánh nhận —</option>{others.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
+          </select>
+        </Field>
+        <div style={{ height: 10 }} />
+        {stock.loading ? <Loading /> : lines.map((l, idx) => {
+          const r = l.item_id ? byId.get(l.item_id) : undefined;
+          const bad = Boolean(r && Number(l.qty) > Number(r.usable_qty));
+          return (
+            <div key={l.key} className="wiz-card">
+              <div className="wiz-card-head wiz-line">
+                <div><ItemPicker items={pickItems} value={l.item_id} placeholder={`Tìm vật tư ${idx + 1}…`} emptyText={emptyText}
+                  onChange={id => set(l.key, { item_id: id })} exclude={lines.filter(x => x.key !== l.key).map(x => x.item_id!).filter(Boolean)} /></div>
+                {r ? <span className="wiz-qty"><ItemQtyInput itemId={l.item_id} unit={r.unit} value={l.qty} onChange={v => set(l.key, { qty: v })} bad={bad} />
+                  {!hasPack(r) && <span className="qp-u">{r.unit}</span>}</span>
+                  : <span className="wiz-qty"><input className="input sm num" disabled placeholder="SL" aria-label="Số lượng" /><span className="qp-u" /></span>}
+                <button className="btn btn-ghost btn-sm icon-only" aria-label="Xóa dòng" onClick={() => setLines(ls => ls.length > 1 ? ls.filter(x => x.key !== l.key) : [{ key: seq++, item_id: null, qty: '' }])}><Trash2 size={15} /></button>
+              </div>
+              {r && <span className={`small ${bad ? 'text-danger' : 'muted'}`}>{bad ? 'Vượt tồn — ' : ''}còn {fmtUnits(r.usable_qty, r)}</span>}
+            </div>
+          );
+        })}
+        <button className="btn btn-sm" onClick={() => setLines(ls => [...ls, { key: seq++, item_id: null, qty: '' }])}><Plus size={14} /> Thêm vật tư</button>
+      </>}
+      {step === 2 && <>
+        <div className="wiz-sum"><b>Gửi đến {branches.find(b => b.id === to)?.name}</b>
+          <ul>{valid.map(l => { const r = byId.get(l.item_id!); return <li key={l.key}>{r?.name}: <b>{fmtUnits(l.qty, r)}</b></li>; })}</ul></div>
+        <Field label="Ghi chú"><textarea className="input" value={note} onChange={e => setNote(e.target.value)} placeholder="VD: bổ sung định kỳ tháng 11" /></Field>
+        <p className="muted small" style={{ marginBottom: 0 }}>Bấm “Gửi hàng” là kho {fromName} bị trừ ngay. Chi nhánh nhận kiểm hàng rồi bấm “Đã nhận”.</p>
+      </>}
+    </Modal>
+  );
   return (
     <Modal size="wide" title={`${fromName} cấp hàng chủ động`} onClose={onClose} footer={<>
       <div className="foot-summary small">
@@ -375,7 +421,7 @@ function PushModal({ onClose, onCreated }: { onClose: () => void; onCreated: (id
             const bad = r && Number(l.qty) > Number(r.usable_qty);
             return (
               <tr key={l.key}>
-                <td><ItemPicker items={pickItems} value={l.item_id} onChange={id => set(l.key, { item_id: id })} exclude={lines.filter(x => x.key !== l.key).map(x => x.item_id!).filter(Boolean)} /></td>
+                <td><ItemPicker items={pickItems} value={l.item_id} emptyText={emptyText} onChange={id => set(l.key, { item_id: id })} exclude={lines.filter(x => x.key !== l.key).map(x => x.item_id!).filter(Boolean)} /></td>
                 <td className="num"><ItemQtyInput itemId={l.item_id} unit={r?.unit} value={l.qty} onChange={v => set(l.key, { qty: v })} bad={Boolean(bad)} /></td>
                 <td><UnitCell itemId={l.item_id} unit={r?.unit} /></td>
                 <td className="num">{r ? <span className={bad ? 'text-danger' : ''}>{fmtUnits(r.usable_qty, r)}</span> : ''}</td>

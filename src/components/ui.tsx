@@ -173,8 +173,8 @@ export function useAction() {
 export type PickItem = { id: number; code: string; name: string; unit: string; group_name: string | null; extra?: ReactNode };
 
 /** Ô chọn vật tư có tìm kiếm (gõ không dấu cũng được) */
-export function ItemPicker({ items, value, onChange, placeholder = 'Tìm vật tư…', exclude = [] }: {
-  items: PickItem[]; value: number | null; onChange: (id: number) => void; placeholder?: string; exclude?: number[];
+export function ItemPicker({ items, value, onChange, placeholder = 'Tìm vật tư…', exclude = [], emptyText }: {
+  items: PickItem[]; value: number | null; onChange: (id: number) => void; placeholder?: string; exclude?: number[]; emptyText?: string;
 }) {
   const [open, setOpen] = useState(false);
   const [q, setQ] = useState('');
@@ -228,7 +228,7 @@ export function ItemPicker({ items, value, onChange, placeholder = 'Tìm vật t
       {open && (isMobile || pos) && (
         <div className="combo-list" style={isMobile ? { position: 'static', width: '100%', minWidth: 0, maxHeight: 260, marginTop: 4 }
           : { position: 'fixed', left: pos!.left, top: pos!.top, bottom: pos!.bottom, right: 'auto', width: pos!.width, maxHeight: pos!.maxH, zIndex: 400 }}>
-          {list.length === 0 && <div className="empty small">Không tìm thấy vật tư</div>}
+          {list.length === 0 && <div className="empty small">{items.length === 0 && emptyText ? emptyText : 'Không tìm thấy vật tư'}</div>}
           {list.map((i, idx) => {
             const head = i.group_name !== lastGroup ? <div className="grp">{i.group_name ?? 'Khác'}</div> : null;
             lastGroup = i.group_name;

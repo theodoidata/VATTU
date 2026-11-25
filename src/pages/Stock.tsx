@@ -123,7 +123,13 @@ export default function StockPage() {
             <input className="input" placeholder="Tìm theo mã, tên vật tư (gõ không dấu được)…" value={q} onChange={e => setQ(e.target.value)} />
             <span className="muted small">{rows.length} vật tư</span>
           </div>
-          {loading ? <Loading /> : error ? <div className="notice danger">{error}</div> : rows.length === 0 ? <Empty>{showAll || searching ? 'Không tìm thấy vật tư phù hợp.' : isMobile ? 'Chi nhánh chưa có vật tư nào đang tồn. Gõ tên vào ô tìm để tra trong toàn bộ danh mục.' : 'Không có vật tư phù hợp. Vật tư chưa có tồn đang được ẩn, tick “Hiện cả vật tư không có tồn” để xem.'}</Empty> : (
+          {loading ? <Loading /> : error ? <div className="notice danger">{error}</div> : rows.length > 0 && isMobile && searching ? (
+            <><div className="quick-list">{pg.shown.map(r => (
+              <button key={r.id} onClick={() => setDetail(r)}>
+                <span className="ql-name">{r.name}</span>
+                <b className={Number(r.qty) > 0 ? '' : 'muted'}>{fmtUnits(r.qty, r)}</b>
+              </button>))}</div>{pg.pager}</>
+          ) : rows.length === 0 ? <Empty>{showAll || searching ? 'Không tìm thấy vật tư phù hợp.' : isMobile ? 'Chi nhánh chưa có vật tư nào đang tồn. Gõ tên vào ô tìm để tra trong toàn bộ danh mục.' : 'Không có vật tư phù hợp. Vật tư chưa có tồn đang được ẩn, tick “Hiện cả vật tư không có tồn” để xem.'}</Empty> : (
             <><div className="table-wrap cards-sm"><table className="data fixed-cols">
               <thead><tr><th style={{ width: 84 }}>Mã</th><th>Tên vật tư</th><th className="hide-sm" style={{ width: 130 }}>Nhóm</th><th className="num" style={{ width: 100 }}>Tồn</th><th className="num" style={{ width: 104 }}>Còn dùng được</th><th className="num" style={{ width: 96 }}>Tối thiểu</th><th style={{ width: 104 }}>Trạng thái</th><th style={{ width: 112 }}>Hạn gần nhất</th></tr></thead>
               <tbody>{pg.shown.map(r => (

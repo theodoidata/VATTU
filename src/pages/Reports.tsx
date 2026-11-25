@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { Download } from 'lucide-react';
 import { useApp } from '../lib/app-context';
-import { Badge, BranchSelect, Empty, Loading, PageHeader, StockBadge, useRpc, usePaged, useUnits } from '../components/ui';
+import { Badge, BranchSelect, Empty, Loading, PageHeader, StockBadge, useRpc, usePaged, useUnits, useIsMobile } from '../components/ui';
 import { STOCK_LEVEL, TRANSFER_STATUS, addDays, fmtDate, fmtDateTime, fmtQty, fmtUnits, norm, stockLevel } from '../lib/format';
 import type { MatrixRow, StockRow, Transfer, TransferStatus } from '../lib/types';
 import { exportExcel, sheet } from '../lib/excel';
@@ -170,7 +170,9 @@ function UsageReport() {
   const { has, branches } = useApp();
   const r = useRange(30);
   const [branch, setBranch] = useState<number | null>(null);
-  const [view, setView] = useState<'sum' | 'detail'>('sum');
+  const [viewSel, setView] = useState<'sum' | 'detail'>('sum');
+  const isMobile = useIsMobile();
+  const view = isMobile ? 'detail' : viewSel; // điện thoại: chỉ xem chi tiết từng dòng
   const U = useUnits();
   const u = useRpc<UsageRow[]>('report_usage', { from: r.from, to: r.to, branch_id: branch });
   const data = u.data ?? [];
@@ -206,7 +208,7 @@ function UsageReport() {
       <div className="toolbar">
         {r.el}
         {has('inv_report_view_all') && <BranchSelect value={branch} onChange={setBranch} includeAll="Tất cả chi nhánh" />}
-        <select className="select sm" value={view} onChange={e => setView(e.target.value as 'sum' | 'detail')}><option value="sum">Tổng hợp theo vật tư</option><option value="detail">Chi tiết từng dòng</option></select>
+        <select className="select sm hide-mobile" value={viewSel} onChange={e => setView(e.target.value as 'sum' | 'detail')}><option value="sum">Tổng hợp theo vật tư</option><option value="detail">Chi tiết từng dòng</option></select>
         <span className="spacer" /><ExportBtn onClick={doExport} disabled={!data.length} />
       </div>
       {u.loading ? <Loading /> : u.error ? <div className="notice danger">{u.error}</div> : !data.length ? <Empty>Không có dữ liệu xuất dùng.</Empty> : view === 'sum' ? (
