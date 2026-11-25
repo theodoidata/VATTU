@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Plus, Trash2, Send, Check, X, PackageCheck, Truck, Lightbulb } from 'lucide-react';
+import { Plus, Trash2, Send, Check, X, PackageCheck, Truck, Lightbulb, Download } from 'lucide-react';
 import { useApp, type AppCtx } from '../lib/app-context';
 import { Badge, Empty, Field, ItemPicker, ItemQtyInput, Loading, UnitCell, Modal, PageHeader, ReasonModal, useAction, useRpc, usePaged, useUnits } from '../components/ui';
 import { TRANSFER_STATUS, fmtDate, fmtDateTime, fmtQty, fmtUnits } from '../lib/format';
 import type { Item, MatrixRow, StockRow, Transfer, TransferLine } from '../lib/types';
 import { handoff } from '../lib/handoff';
+import { exportExcel, sheet } from '../lib/excel';
 
 /** Phiếu đang chờ chính người dùng này làm bước tiếp theo */
 export function transferNeedsMe(t: Transfer, ctx: Pick<AppCtx, 'has' | 'session' | 'branchId'>) {
@@ -15,7 +16,7 @@ export function transferNeedsMe(t: Transfer, ctx: Pick<AppCtx, 'has' | 'session'
   return false;
 }
 
-type Tab = 'todo' | 'in' | 'out' | 'all';
+type Tab = 'todo' | 'in' | 'out' | 'all' | 'buy';
 
 export default function TransfersPage() {
   const app = useApp();
@@ -35,7 +36,9 @@ export default function TransfersPage() {
     out: all.filter(t => t.from_branch_id === branchId),
     all,
   }), [all, app, branchId]);
-  const rows = groups[tab];
+  const rows = tab === 'buy' ? [] : groups[tab];
+  // Tab "Cần mua": cho chi nhánh cấp hàng (thường là Kho tổng) biết phải nhập thêm bao nhiêu từ NCC
+  const canBuy = canAct(branchId) && (has('inv_transfer_approve') || has('inv_receipt_create'));
   const open = all.find(t => t.id === openId) ?? null;
   const pg = usePaged(rows, [tab, branchId]);
 
@@ -49,11 +52,12 @@ export default function TransfersPage() {
         </>} />
       <section className="panel">
         <div className="tabs">
-          {([['todo', 'Cần tôi xử lý'], ['in', `${branch?.name} xin hàng`], ['out', `${branch?.name} cấp hàng`], ['all', 'Tất cả']] as const).map(([k, l]) => (
+          {([['todo', 'Cần tôi xử lý'], ['in', `${branch?.name} xin hàng`], ['out', `${branch?.name} cấp hàng`], ['all', 'Tất cả'],
+             ...(canBuy ? [['buy', 'Cần mua']] as const : [])] as const).map(([k, l]) => (
             <button key={k} className={tab === k ? 'active' : ''} onClick={() => setTab(k)}>{l}{k === 'todo' && groups.todo.length > 0 && <em>{groups.todo.length}</em>}</button>
           ))}
         </div>
-        {list.loading ? <Loading /> : list.error ? <div className="notice danger">{list.error}</div> : rows.length === 0 ? <Empty>Không có phiếu điều chuyển.</Empty> : (
+        {tab === 'buy' ? <BuyList branchId={branchId} branchName={branch?.name ?? ''} onOpen={setOpenId} /> : list.loading ? <Loading /> : list.error ? <div className="notice danger">{list.error}</div> : rows.length === 0 ? <Empty>Không có phiếu điều chuyển.</Empty> : (
           <><div className="table-wrap"><table className="data">
             <thead><tr><th>Mã phiếu</th><th>Chi nhánh xin (A)</th><th>Chi nhánh cấp (B)</th><th>Vật tư</th><th>Trạng thái</th><th>Ngày tạo</th><th>Người tạo</th></tr></thead>
             <tbody>{pg.shown.map(t => (
@@ -62,7 +66,8 @@ export default function TransfersPage() {
                 <td>{t.to_branch_name}</td><td>{t.from_branch_name}</td>
                 <td className="small">{t.lines.slice(0, 2).map(l => `${l.item_name} ×${U(l.qty_approved ?? l.qty_requested, l.item_id, l.unit)}`).join('; ')}{t.lines.length > 2 && ` … +${t.lines.length - 2}`}</td>
                 <td><Badge tone={TRANSFER_STATUS[t.status].tone}>{TRANSFER_STATUS[t.status].label}</Badge>
-                  {t.kind === 'push' && <div><Badge tone="info">Cấp chủ động</Badge></div>}{t.has_shortage && <div><Badge tone="danger">Nhận thiếu</Badge></div>}</td>
+                  {t.kind === 'push' && <div><Badge tone="info">Cấp chủ động</Badge></div>}{t.has_shortage && <div><Badge tone="danger">Nhận thiếu</Badge></div>}
+                  {t.awaiting_stock && <div><Badge tone="warning">Chờ hàng về</Badge></div>}</td>
                 <td className="small nowrap">{fmtDateTime(t.requested_at)}</td><td className="small">{t.requested_by_name}</td>
               </tr>
             ))}</tbody>
@@ -74,6 +79,64 @@ export default function TransfersPage() {
       {open && <DetailModal t={open} onClose={() => setOpenId(null)} />}
     </>
   );
+}
+
+/** Tổng hợp các phiếu xin hàng đang chờ gửi từ chi nhánh này → số cần mua thêm từ NCC */
+function BuyList({ branchId, branchName, onOpen }: { branchId: number; branchName: string; onOpen: (id: number) => void }) {
+  const { today, has } = useApp();
+  const U = useUnits();
+  const open = useRpc<Transfer[]>('list_transfers', { status: ['pending', 'approved'], branch_id: branchId });
+  const [showAll, setShowAll] = useState(false);
+  const rows = useMemo(() => {
+    const m = new Map<number, { item_id: number; code: string; name: string; unit: string; total: number; usable: number;
+      by: Map<string, number>; docs: { id: number; code: string }[] }>();
+    for (const t of open.data ?? []) {
+      if (t.from_branch_id !== branchId) continue;
+      for (const l of t.lines) {
+        const q = Number(l.qty_approved ?? l.qty_requested);
+        const e = m.get(l.item_id) ?? { item_id: l.item_id, code: l.item_code, name: l.item_name, unit: l.unit, total: 0,
+          usable: Number(l.src_usable ?? 0), by: new Map<string, number>(), docs: [] as { id: number; code: string }[] };
+        e.total += q; e.by.set(t.to_branch_name, (e.by.get(t.to_branch_name) ?? 0) + q);
+        if (!e.docs.some(d => d.id === t.id)) e.docs.push({ id: t.id, code: t.code });
+        m.set(l.item_id, e);
+      }
+    }
+    return [...m.values()].map(e => ({ ...e, need: Math.max(0, e.total - e.usable) }))
+      .sort((a, b) => b.need - a.need || a.name.localeCompare(b.name, 'vi'));
+  }, [open.data, branchId]);
+  const shown = showAll ? rows : rows.filter(r => r.need > 0);
+  const pg = usePaged(shown, [branchId, showAll]);
+  const doExport = () => exportExcel(`Can-mua-${branchName}-${today}`, [sheet('Cần mua', shown, [
+    { header: 'Mã', get: r => r.code, width: 12 }, { header: 'Vật tư', get: r => r.name, width: 40 }, { header: 'ĐVT', get: r => r.unit, width: 8 },
+    { header: 'Các chi nhánh xin', get: r => [...r.by].map(([b, q]) => `${b}: ${U(q, r.item_id, r.unit)}`).join('; '), width: 40 },
+    { header: 'Tổng xin', get: r => r.total, width: 10 }, { header: 'Kho còn dùng được', get: r => r.usable, width: 16 },
+    { header: 'Cần mua', get: r => r.need, width: 10 }, { header: 'Cần mua (hộp + lẻ)', get: r => U(r.need, r.item_id, r.unit), width: 18 },
+  ])]);
+  return (<>
+    <div className="toolbar">
+      <span className="small muted">Cộng các phiếu xin hàng <b>đang chờ duyệt / chờ gửi</b> từ {branchName}, trừ đi số {branchName} còn dùng được.</span>
+      <span className="spacer" />
+      <label className="check"><input type="checkbox" checked={showAll} onChange={e => setShowAll(e.target.checked)} /> Hiện cả vật tư đủ hàng</label>
+      {has('inv_report_export') && <button className="btn" disabled={!shown.length} onClick={doExport}><Download size={16} /> Xuất Excel</button>}
+    </div>
+    {open.loading ? <Loading /> : open.error ? <div className="notice danger">{open.error}</div> : !shown.length
+      ? <Empty>{rows.length ? `${branchName} đủ hàng cho tất cả phiếu đang chờ.` : `Không có phiếu nào đang xin hàng từ ${branchName}.`}</Empty> : (
+      <><div className="table-wrap"><table className="data fixed-cols">
+        <thead><tr><th>Vật tư</th><th style={{ width: '30%' }}>Các chi nhánh xin</th><th className="num" style={{ width: 110 }}>Tổng xin</th>
+          <th className="num" style={{ width: 120 }}>{branchName} còn</th><th className="num" style={{ width: 120 }}>Cần mua</th><th style={{ width: 150 }}>Phiếu</th></tr></thead>
+        <tbody>{pg.shown.map(r => (
+          <tr key={r.item_id}>
+            <td><span className="item-name">{r.name}</span> <span className="item-code">{r.code}</span></td>
+            <td className="small">{[...r.by].map(([b, q]) => <div key={b}>{b}: <b>{U(q, r.item_id, r.unit)}</b></div>)}</td>
+            <td className="num">{U(r.total, r.item_id, r.unit)}</td>
+            <td className="num">{r.usable > 0 ? U(r.usable, r.item_id, r.unit) : <span className="text-danger">0</span>}</td>
+            <td className="num">{r.need > 0 ? <b className="text-danger">{U(r.need, r.item_id, r.unit)}</b> : <span className="muted">Đủ</span>}</td>
+            <td className="small">{r.docs.map(d => <button key={d.id} className="link-btn mono" style={{ marginRight: 6 }} onClick={() => onOpen(d.id)}>{d.code}</button>)}</td>
+          </tr>))}</tbody>
+      </table></div>{pg.pager}</>
+    )}
+    <p className="muted small">Sau khi hàng NCC về: ghi <b>Nhập kho</b> cho {branchName}, rồi mở từng phiếu để <b>Duyệt → Gửi hàng</b>. Nhãn “Chờ hàng về” trên phiếu tự mất khi đủ hàng.</p>
+  </>);
 }
 
 type Line = { key: number; item_id: number | null; qty: string; src: number | null; manual: boolean };
@@ -318,7 +381,7 @@ function DetailModal({ t, onClose }: { t: Transfer; onClose: () => void }) {
   const bad = s === 'rejected' || s === 'cancelled';
 
   return (
-    <Modal size="wide" onClose={onClose} title={<>{t.code} <Badge tone={TRANSFER_STATUS[s].tone}>{TRANSFER_STATUS[s].label}</Badge></>} footer={<>
+    <Modal size="wide" onClose={onClose} title={<>{t.code} <Badge tone={TRANSFER_STATUS[s].tone}>{TRANSFER_STATUS[s].label}</Badge>{t.awaiting_stock && <> <Badge tone="warning">Chờ hàng về</Badge></>}</>} footer={<>
       {(s === 'pending' || s === 'approved') && has('inv_transfer_request') && mine(t.to_branch_id) && <button className="btn btn-danger" disabled={busy} onClick={() => setAsk('cancel')}>Hủy yêu cầu</button>}
       {(s === 'pending' || s === 'approved') && has('inv_transfer_approve') && mine(t.from_branch_id) && <button className="btn btn-danger" disabled={busy} onClick={() => setAsk('reject')}><X size={16} /> Từ chối</button>}
       <span className="spacer" />

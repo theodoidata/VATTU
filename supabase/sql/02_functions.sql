@@ -190,6 +190,13 @@ begin
   end if;
 end $$;
 
+-- Số còn dùng được (chưa hết hạn) của 1 vật tư tại 1 chi nhánh
+create or replace function app.usable_qty(p_branch smallint, p_item int) returns numeric
+language sql stable security definer set search_path = public, app as $$
+  select coalesce(sum(qty), 0) from stock_lots
+   where branch_id = p_branch and item_id = p_item and (expiry_date is null or expiry_date >= app.today())
+$$;
+
 create or replace function app.transfer_json(p_id bigint) returns jsonb
 language sql stable security definer set search_path = public, app as $$
   select to_jsonb(t) || jsonb_build_object(
@@ -202,9 +209,15 @@ language sql stable security definer set search_path = public, app as $$
     'closed_by_name',    app.person(t.closed_by),
     'has_shortage', exists (select 1 from transfer_lines x where x.transfer_id = t.id
                              and x.qty_received is not null and x.qty_received < x.qty_approved),
+    -- Chờ hàng về: phiếu chưa gửi mà chi nhánh cấp không đủ hàng (vd Kho tổng đang hết, chờ nhập NCC)
+    'awaiting_stock', t.status in ('pending', 'approved') and exists (
+      select 1 from transfer_lines x where x.transfer_id = t.id
+         and app.usable_qty(t.from_branch_id, x.item_id) < coalesce(x.qty_approved, x.qty_requested)),
     'lines', coalesce((
       select jsonb_agg(to_jsonb(l) || jsonb_build_object(
-               'item_code', i.code, 'item_name', i.name, 'unit', i.unit) order by l.id)
+               'item_code', i.code, 'item_name', i.name, 'unit', i.unit,
+               'src_usable', case when t.status in ('pending', 'approved') then app.usable_qty(t.from_branch_id, l.item_id) end)
+             order by l.id)
         from transfer_lines l join items i on i.id = l.item_id
        where l.transfer_id = t.id), '[]'::jsonb))
   from transfers t where t.id = p_id

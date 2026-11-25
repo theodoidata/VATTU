@@ -164,6 +164,18 @@ await ok('BGĐ đổi tên nhóm danh mục', async () => {
 });
 await err('Quản lý chi nhánh không đổi tên nhóm được', async () => call(U(2), 'rename_group', { id: 1, name: 'x' }), 'quyền');
 
+await ok('Xin hàng khi Kho tổng hết: phiếu đánh dấu Chờ hàng về, nhập hàng xong thì hết đánh dấu', async () => {
+  const id = await item('TH-BONG');
+  const have = Number((await call(U(1), 'get_stock', { branch_id: 1, all: true })).find(x => x.id === id)?.usable_qty ?? 0);
+  const t = await call(U(3), 'create_transfer', { to_branch_id: 5, from_branch_id: 1, lines: [{ item_id: id, qty: have + 7 }] });
+  assert(t.awaiting_stock === true, 'phải đánh dấu chờ hàng về');
+  assert(Number(t.lines[0].src_usable) === have, 'src_usable sai ' + t.lines[0].src_usable);
+  await call(U(1), 'record_receipt', { branch_id: 1, lines: [{ item_id: id, qty: 7, unit_mode: 'base' }] });
+  const t2 = (await call(U(1), 'list_transfers', { status: ['pending'] })).find(x => x.id === t.id);
+  assert(t2.awaiting_stock === false, 'nhập đủ rồi vẫn còn đánh dấu');
+  await call(U(3), 'transfer_action', { id: t.id, action: 'cancel' });
+});
+
 await ok('Sửa phiếu nhập: tăng / giảm / bỏ dòng, tồn điều chỉnh theo chênh lệch', async () => {
   const a = await item('TT-LIDO'), b = await item('TT-MEPI');
   const r = await call(U(2), 'record_receipt', { branch_id: 5, supplier: 'NCC A', lines: [
