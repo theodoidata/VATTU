@@ -29,7 +29,7 @@ const qty = async (b, code) => Number((await db.query(
   'select coalesce(sum(qty),0) q from stock_lots where branch_id=$1 and item_id=(select id from items where code=$2)', [b, code])).rows[0].q);
 
 await ok('get_session BGĐ có đủ quyền', async () => {
-  const s = await call(U(1), 'get_session'); assert(s.permissions.length === 20, 'perm ' + s.permissions.length); assert(s.branches.length === 11);
+  const s = await call(U(1), 'get_session'); assert(s.permissions.length === 21, 'perm ' + s.permissions.length); assert(s.branches.length === 11);
 });
 await ok('get_session kho Hạ Long', async () => {
   const s = await call(U(3), 'get_session'); assert(s.profile.branch_name === 'Hạ Long'); assert(!s.permissions.includes('inv_transfer_approve'));
@@ -154,6 +154,15 @@ await ok('Tách đơn vị lẻ: 1 gói = 10 miếng, tồn/tối thiểu/lịch
   assert(await q() === before * 10 + 10, 'nhập 1 gói phải cộng 10 miếng');
 });
 await err('Số quy đổi phải nguyên ≥ 2', async () => call(U(1), 'set_item_conversion', { item_id: await item('TH-GAC'), small_unit: 'x', factor: 1.5 }), 'đã có quy đổi');
+
+await ok('BGĐ đổi tên nhóm danh mục', async () => {
+  const g = (await db.query("select id from item_groups order by id limit 1")).rows[0].id;
+  const r = await call(U(1), 'rename_group', { id: g, name: 'Nhóm đổi tên' });
+  assert(r.name === 'Nhóm đổi tên', 'chưa đổi tên');
+  const s = await call(U(1), 'get_session');
+  assert(s.groups.some(x => x.name === 'Nhóm đổi tên'), 'session chưa có tên mới');
+});
+await err('Quản lý chi nhánh không đổi tên nhóm được', async () => call(U(2), 'rename_group', { id: 1, name: 'x' }), 'quyền');
 
 await ok('Sửa phiếu nhập: tăng / giảm / bỏ dòng, tồn điều chỉnh theo chênh lệch', async () => {
   const a = await item('TT-LIDO'), b = await item('TT-MEPI');

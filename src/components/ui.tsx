@@ -74,7 +74,7 @@ export function Loading() { return <div className="empty"><Loader2 className="sp
 /* Danh mục vật tư (811 dòng) ít khi đổi → nhớ trong phiên để khỏi tải lại mỗi lần mở trang (đỡ tốn dữ liệu).
    Chỉ xóa bộ nhớ khi có thao tác sửa danh mục / mức tối thiểu, hoặc khi đổi người dùng. */
 const CACHED_FNS = new Set(['list_items']);
-const CATALOG_WRITES = new Set(['save_item', 'save_min_qty', 'update_item_basic', 'set_item_conversion']);
+const CATALOG_WRITES = new Set(['save_item', 'save_min_qty', 'update_item_basic', 'set_item_conversion', 'rename_group']);
 const rpcCache = new Map<string, Promise<unknown>>();
 export const clearRpcCache = () => rpcCache.clear();
 

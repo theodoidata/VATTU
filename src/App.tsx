@@ -169,6 +169,7 @@ function Shell({ backend, onSignOut, demo }: { backend: Backend; onSignOut: () =
       branchId, setBranchId: (id: number) => { store.set('branch-' + session.profile!.id, String(id)); setBranchIdState(id); },
       canAct, canViewAll: has('inv_stock_view_all') || has('inv_all_branches') || has('inv_report_view_all'),
       toast, refreshKey,
+      reloadSession: async () => { const s = await backend.rpc<Session>('get_session'); setSession(s); },
       bump: (fn?: string) => { setRefreshKey(k => k + 1); if (!fn || fn.includes('transfer') || fn.includes('stocktake')) setTransferTick(t => t + 1); },
       go: (p: string) => { window.location.hash = p; },
     };

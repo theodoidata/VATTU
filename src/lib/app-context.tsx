@@ -20,6 +20,8 @@ export type AppCtx = {
   /** báo đã ghi dữ liệu (fn = tên hàm vừa gọi) → các trang đang mở tải lại */
   bump: (fn?: string) => void;
   go: (page: string) => void;
+  /** tải lại thông tin phiên (sau khi đổi tên nhóm, chi nhánh…) */
+  reloadSession: () => Promise<void>;
 };
 
 export const Ctx = createContext<AppCtx>(null as unknown as AppCtx);

@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { Plus, Download } from 'lucide-react';
+import { Plus, Download, FolderPen } from 'lucide-react';
 import { useApp } from '../lib/app-context';
 import { Badge, Chips, Empty, Field, FilterBlock, FilterPanel, GroupList, Loading, Modal, PageHeader, useAction, useRpc, usePaged } from '../components/ui';
 import { fmtQty, fmtUnits, norm } from '../lib/format';
@@ -13,6 +13,7 @@ export default function CatalogPage() {
   const [group, setGroup] = useState<number | ''>('');
   const [editing, setEditing] = useState<Item | 'new' | null>(null);
   const canEdit = has('inv_catalog_manage');
+  const [groupsOpen, setGroupsOpen] = useState(false);
   const [lotSel, setLotSel] = useState<'all' | 'yes' | 'no'>('all');
   const [actSel, setActSel] = useState<'all' | 'on' | 'off'>('all');
   const [minSel, setMinSel] = useState<'all' | 'set' | 'none'>('all');
@@ -43,6 +44,7 @@ export default function CatalogPage() {
     <>
       <PageHeader title="Danh mục vật tư" description="Tên – đơn vị tính – nhóm – quản lý số lô/hạn dùng – tồn tối thiểu (mặc định và riêng từng chi nhánh)."
         actions={<>{has('inv_report_export') && <button className="btn" onClick={doExport}><Download size={16} /> Xuất Excel</button>}
+          {has('inv_group_manage') && <button className="btn" onClick={() => setGroupsOpen(true)}><FolderPen size={16} /> Sửa tên nhóm</button>}
           {canEdit && <button className="btn btn-primary" onClick={() => setEditing('new')}><Plus size={16} /> Thêm vật tư</button>}</>} />
       <div className="list-layout">
       <FilterPanel active={activeFilters} onClear={clear}>
@@ -73,6 +75,7 @@ export default function CatalogPage() {
         )}
       </section>
       </div>
+      {groupsOpen && <GroupsModal counts={groupCounts} onClose={() => setGroupsOpen(false)} />}
       {editing && <ItemModal item={editing === 'new' ? null : editing} onClose={() => setEditing(null)} />}
     </>
   );
@@ -147,6 +150,38 @@ function ItemModal({ item, onClose }: { item: Item | null; onClose: () => void }
           </div>
         </>
       )}
+    </Modal>
+  );
+}
+
+/** Đổi tên nhóm danh mục (quyền inv_group_manage — mặc định BGĐ) */
+function GroupsModal({ counts, onClose }: { counts: Map<number | null, number>; onClose: () => void }) {
+  const { groups, reloadSession, toast } = useApp();
+  const { run, busy } = useAction();
+  const [names, setNames] = useState<Record<number, string>>(() => Object.fromEntries(groups.map(g => [g.id, g.name])));
+  const changed = groups.filter(g => (names[g.id] ?? '').trim() && names[g.id].trim() !== g.name);
+  const save = async () => {
+    let n = 0;
+    for (const g of changed) if (await run('rename_group', { id: g.id, name: names[g.id].trim() })) n++;
+    if (n) { await reloadSession(); toast(`Đã đổi tên ${n} nhóm`, 'success'); }
+    if (n === changed.length) onClose();
+  };
+  return (
+    <Modal title="Sửa tên nhóm danh mục" onClose={onClose} footer={<>
+      <button className="btn" onClick={onClose}>Đóng</button>
+      <button className="btn btn-primary" disabled={busy || !changed.length} onClick={() => void save()}>Lưu {changed.length ? `(${changed.length} nhóm)` : ''}</button>
+    </>}>
+      <p className="small muted" style={{ marginTop: 0 }}>Đổi tên chỉ thay chữ hiển thị; vật tư trong nhóm giữ nguyên.</p>
+      <div className="table-wrap"><table className="data">
+        <thead><tr><th style={{ width: 90 }}>Mã</th><th>Tên nhóm</th><th className="num" style={{ width: 90 }}>Số vật tư</th></tr></thead>
+        <tbody>{groups.map(g => (
+          <tr key={g.id}>
+            <td className="mono small">{g.code}</td>
+            <td><input className="input sm" style={{ width: '100%', borderColor: names[g.id]?.trim() !== g.name ? 'var(--td-color-primary)' : undefined }}
+              value={names[g.id] ?? ''} onChange={e => setNames(v => ({ ...v, [g.id]: e.target.value }))} /></td>
+            <td className="num">{counts.get(g.id) ?? 0}</td>
+          </tr>))}</tbody>
+      </table></div>
     </Modal>
   );
 }

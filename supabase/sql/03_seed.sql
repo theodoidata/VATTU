@@ -33,6 +33,7 @@ insert into permissions (key, group_name, label, description, sort_order) values
   ('inv_stocktake_approve', 'Kiểm kê',     'Chốt kiểm kê (điều chỉnh tồn)', 'Duyệt chênh lệch, hệ thống tự điều chỉnh tồn.', 51),
   ('inv_catalog_manage',    'Danh mục',    'Thêm / sửa danh mục vật tư', null, 60),
   ('inv_min_manage',        'Danh mục',    'Đặt tồn tối thiểu cho chi nhánh', null, 61),
+  ('inv_group_manage',      'Danh mục',    'Sửa tên nhóm danh mục', 'Đổi tên các nhóm hàng (Dụng cụ, Vật liệu, File máy…). Mặc định chỉ BGĐ.', 62),
   ('inv_report_view',       'Báo cáo',     'Xem báo cáo chi nhánh mình', null, 70),
   ('inv_report_view_all',   'Báo cáo',     'Xem báo cáo tất cả chi nhánh', null, 71),
   ('inv_report_export',     'Báo cáo',     'Xuất Excel', null, 72),

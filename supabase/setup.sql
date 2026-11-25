@@ -865,6 +865,24 @@ begin
   return (select jsonb_build_object('id', id, 'name', name, 'unit', unit) from items where id = v_id);
 end $$;
 
+-- Đổi tên nhóm danh mục (mặc định chỉ BGĐ có quyền)
+create or replace function public.rename_group(p jsonb) returns jsonb
+language plpgsql security definer set search_path = public, app as $$
+declare
+  v_id   int := nullif(p->>'id', '')::int;
+  v_name text := nullif(trim(coalesce(p->>'name', '')), '');
+begin
+  perform app.me();
+  perform app.require('inv_group_manage');
+  if v_name is null then raise exception 'Tên nhóm không được để trống.'; end if;
+  if exists (select 1 from item_groups where lower(name) = lower(v_name) and id <> v_id) then
+    raise exception 'Đã có nhóm tên “%”.', v_name;
+  end if;
+  update item_groups set name = v_name where id = v_id;
+  if not found then raise exception 'Không tìm thấy nhóm.'; end if;
+  return (select to_jsonb(g) from item_groups g where id = v_id);
+end $$;
+
 -- Tách đơn vị lẻ: vật tư đang tính theo 1 đơn vị (vd "hộp") → đặt 1 hộp = N đơn vị nhỏ (vd "sợi").
 -- Từ đó tồn được đếm theo đơn vị nhỏ (hiển thị gộp "1 hộp 1 sợi"), nên mọi số lượng cũ
 -- (tồn, tối thiểu, lịch sử, phiếu đang dở) được nhân N để không lệch.
@@ -1665,6 +1683,7 @@ insert into permissions (key, group_name, label, description, sort_order) values
   ('inv_stocktake_approve', 'Kiểm kê',     'Chốt kiểm kê (điều chỉnh tồn)', 'Duyệt chênh lệch, hệ thống tự điều chỉnh tồn.', 51),
   ('inv_catalog_manage',    'Danh mục',    'Thêm / sửa danh mục vật tư', null, 60),
   ('inv_min_manage',        'Danh mục',    'Đặt tồn tối thiểu cho chi nhánh', null, 61),
+  ('inv_group_manage',      'Danh mục',    'Sửa tên nhóm danh mục', 'Đổi tên các nhóm hàng (Dụng cụ, Vật liệu, File máy…). Mặc định chỉ BGĐ.', 62),
   ('inv_report_view',       'Báo cáo',     'Xem báo cáo chi nhánh mình', null, 70),
   ('inv_report_view_all',   'Báo cáo',     'Xem báo cáo tất cả chi nhánh', null, 71),
   ('inv_report_export',     'Báo cáo',     'Xuất Excel', null, 72),
