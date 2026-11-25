@@ -499,3 +499,12 @@ table.data.fixed-cols th { white-space: normal; line-height: 1.25; }
 .text-success { color: var(--td-success); }
 
 @media (max-width: 760px) { .toast { top: 64px; bottom: auto; left: 12px; right: 12px; } .hide-mobile { display: none !important; } }
+
+/* Dòng vật tư trong popup: tên vật tư + số lượng cùng một hàng (tên dài thì bị che bớt) */
+.wiz-card-head { align-items: center; }
+.wiz-qty { flex: none; display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
+.wiz-qty .input.num, .wiz-qty > input { width: 60px !important; padding: 0 6px; text-align: right; }
+.wiz-qty .qty-pack .input { width: 44px !important; }
+.wiz-qty .qp-u, .wiz-qty .muted.small { font-size: 12px; color: var(--td-text-muted); }
+.wiz-card { gap: 4px; }
+.wiz-card-head .combo .input { text-overflow: ellipsis; }

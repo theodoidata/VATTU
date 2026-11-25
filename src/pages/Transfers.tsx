@@ -225,11 +225,10 @@ function CreateModal({ onClose, onCreated }: { onClose: () => void; onCreated: (
                 <div className="wiz-card-head">
                   <div><ItemPicker items={activeItems} value={l.item_id} placeholder={`Tìm vật tư ${idx + 1}…`}
                     onChange={id => set(l.key, { item_id: id, manual: false })} exclude={lines.filter(x => x.key !== l.key).map(x => x.item_id!).filter(Boolean)} /></div>
+                  {l.item_id && <span className="wiz-qty"><ItemQtyInput itemId={l.item_id} unit={it?.unit} value={l.qty} onChange={v => set(l.key, { qty: v })} showUnit /></span>}
                   <button className="btn btn-ghost btn-sm icon-only" aria-label="Xóa dòng"
                     onClick={() => setLines(ls => ls.length > 1 ? ls.filter(x => x.key !== l.key) : [{ key: seq++, item_id: null, qty: '', src: null, manual: false }])}><Trash2 size={15} /></button>
                 </div>
-                {l.item_id && <div className="wiz-row"><span className="small muted">Số lượng</span>
-                  <ItemQtyInput itemId={l.item_id} unit={it?.unit} value={l.qty} onChange={v => set(l.key, { qty: v })} showUnit /></div>}
               </div>
             );
           })}

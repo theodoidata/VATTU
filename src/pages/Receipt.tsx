@@ -150,13 +150,12 @@ function ReceiptForm() {
                   <div><ItemPicker items={active} value={l.item_id} placeholder={`Tìm vật tư ${idx + 1}…`}
                     onChange={id => setL(l.key, { item_id: id, unit_mode: byId.get(id)?.purchase_unit ? 'purchase' : 'base' })}
                     exclude={form.lines.filter(x => x.key !== l.key).map(x => x.item_id!).filter(Boolean)} /></div>
+                  {it && <span className="wiz-qty">{pack ? <QtyInput value={l.qty === '' ? '' : String(baseQty(l, it))} onChange={v => setL(l.key, { qty: v, unit_mode: 'base' })} unit={it} placeholder="0" />
+                    : <><input className="input sm num" type="number" min={0} step="any" placeholder="SL" value={l.qty}
+                        onChange={e => setL(l.key, { qty: e.target.value, unit_mode: 'base' })} /><span className="qp-u">{it.unit}</span></>}</span>}
                   <button className="btn btn-ghost btn-sm icon-only" aria-label="Xóa dòng" onClick={() => setLines(ls => ls.length > 1 ? ls.filter(x => x.key !== l.key) : [newLine()])}><Trash2 size={15} /></button>
                 </div>
-                {it && <div className="wiz-row"><span className="small muted">Số lượng</span>
-                  {pack ? <QtyInput value={l.qty === '' ? '' : String(baseQty(l, it))} onChange={v => setL(l.key, { qty: v, unit_mode: 'base' })} unit={it} />
-                    : <><input className="input sm num" type="number" min={0} step="any" style={{ width: 90, textAlign: 'right' }} value={l.qty}
-                        onChange={e => setL(l.key, { qty: e.target.value, unit_mode: 'base' })} /><span className="small muted">{it.unit}</span></>}
-                  {it.track_lot && <span className="small text-warning" style={{ marginLeft: 'auto' }}>cần lô/HSD</span>}</div>}
+                {it?.track_lot && <span className="small text-warning">Cần nhập số lô / hạn dùng ở bước sau</span>}
               </div>
             );
           })}
