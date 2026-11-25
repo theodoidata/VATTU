@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
-import { Plus, ArrowLeft, Save, Send, CheckCheck, Undo2, Download, Trash2 } from 'lucide-react';
+import { Plus, ArrowLeft, Save, Send, CheckCheck, Undo2, Download, Trash2, ChevronLeft, ChevronRight, ListChecks } from 'lucide-react';
 import { useApp } from '../lib/app-context';
-import { Badge, Empty, Field, ItemPicker, Loading, Modal, PageHeader, QtyInput, UnitCell, useAction, useRpc, usePaged, useUnits } from '../components/ui';
+import { Badge, Empty, Field, ItemPicker, Loading, Modal, PageHeader, QtyInput, UnitCell, useAction, useRpc, usePaged, useUnits, useIsMobile } from '../components/ui';
 import { fmtDate, fmtDateTime, hasPack, norm } from '../lib/format';
 import type { Item, Stocktake } from '../lib/types';
 import { exportExcel, sheet } from '../lib/excel';
@@ -98,6 +98,9 @@ function StocktakeDetail({ id, onBack }: { id: number; onBack: () => void }) {
   const showSystem = showSys || !editable;
   const [confirmBlank, setConfirmBlank] = useState(false);
   const pgL = usePaged(filtered, q);
+  // Điện thoại: popup đếm lần lượt từng vật tư / lô
+  const isMobile = useIsMobile();
+  const [cur, setCur] = useState<number | null>(null);
 
   const payload = (submit: boolean) => ({
     id, submit,
@@ -148,6 +151,9 @@ function StocktakeDetail({ id, onBack }: { id: number; onBack: () => void }) {
           <span className="muted small">Đã đếm {counted}/{lines.length} · lệch {diffs.length}</span>
         </div>
         {editable && !showSys && <p className="muted small" style={{ marginTop: 0 }}>Đang ẩn số sổ sách để đếm khách quan. Không còn hàng thì nhập 0.</p>}
+        {editable && isMobile && filtered.length > 0 && <button className="btn btn-primary" style={{ width: '100%', height: 44, justifyContent: 'center', marginBottom: 10 }}
+          onClick={() => { const i = filtered.findIndex(l => val(l) === ''); setCur(i < 0 ? 0 : i); }}>
+          <ListChecks size={18} /> Đếm từng vật tư ({counted}/{lines.length})</button>}
         <><div className="table-wrap cards-sm"><table className="data lines-table">
           <thead><tr><th>Vật tư</th><th style={{ width: 120 }}>Số lô</th><th style={{ width: 110 }}>Hạn dùng</th>{showSystem && <th className="num" style={{ width: 90 }}>Sổ sách</th>}<th className="num" style={{ width: 160 }}>Thực đếm</th>{editable && <th style={{ width: 100 }}>Đơn vị</th>}{showSystem && <th className="num" style={{ width: 90 }}>Lệch</th>}<th style={{ width: '22%' }}>Ghi chú</th></tr></thead>
           <tbody>{pgL.shown.map(l => {
@@ -182,6 +188,36 @@ function StocktakeDetail({ id, onBack }: { id: number; onBack: () => void }) {
         </table></div>{pgL.pager}</>
         {editable && <button className="btn btn-sm" style={{ marginTop: 8 }} onClick={() => setExtra(es => [...es, { key: seq++, item_id: null, lot_no: '', expiry_date: '', counted_qty: '' }])}><Plus size={14} /> Thêm vật tư / lô tìm thấy ngoài danh sách</button>}
       </section>
+      {cur !== null && filtered[cur] && (() => {
+        const l = filtered[cur];
+        const v = val(l); const d = v === '' ? null : Number(v) - Number(l.system_qty);
+        const nextBlank = filtered.findIndex((x, i) => i > cur && val(x) === '');
+        return (
+          <Modal onClose={() => setCur(null)}
+            title={<span className="guide-title"><small>KIỂM KÊ #{s.id} · {cur + 1}/{filtered.length} · ĐÃ ĐẾM {counted}/{lines.length}</small>{l.item_name}</span>}
+            footer={<>
+              <button className="btn" disabled={cur === 0} onClick={() => setCur(cur - 1)}><ChevronLeft size={16} /> Trước</button>
+              <span className="spacer" />
+              <button className="btn" disabled={busy} onClick={async () => { await save(false); }}><Save size={16} /> Lưu</button>
+              {cur < filtered.length - 1
+                ? <button className="btn btn-primary" onClick={() => setCur(cur + 1)}>Sau <ChevronRight size={16} /></button>
+                : <button className="btn btn-primary" disabled={busy} onClick={async () => { await save(false); setCur(null); }}>Xong</button>}
+            </>}>
+            <div className="wiz-steps"><span className="on" style={{ flex: counted || 0.001 }} /><span style={{ flex: (lines.length - counted) || 0.001 }} /></div>
+            <div className="detail-grid">
+              <div><small>Mã</small><b className="mono">{l.item_code}</b></div>
+              <div><small>Số lô</small><b className="mono">{l.lot_no || '—'}</b></div>
+              <div><small>Hạn dùng</small><b style={{ color: l.expiry_date && l.expiry_date < today ? 'var(--td-danger)' : undefined }}>{fmtDate(l.expiry_date)}</b></div>
+              {showSystem && <div><small>Sổ sách</small><b>{U(l.system_qty, l.item_id, l.unit)}</b></div>}
+            </div>
+            <Field label="Thực đếm (không còn hàng thì nhập 0)"><div>{qtyBox(l.item_id, l.unit, v, nv => setCounts(c => ({ ...c, [l.id]: nv })))}
+              {!hasPack(byId.get(l.item_id)) && <span className="small muted"> {l.unit}</span>}</div></Field>
+            {showSystem && d != null && <p className="small" style={{ margin: '6px 0 0' }}>Lệch: <b style={{ color: d < 0 ? 'var(--td-danger)' : d > 0 ? 'var(--td-success)' : undefined }}>{d === 0 ? '0' : U(d, l.item_id, l.unit, { sign: true })}</b></p>}
+            <div style={{ marginTop: 10 }}><Field label="Ghi chú"><input className="input" value={notes[l.id] ?? l.note ?? ''} onChange={e => setNotes(n => ({ ...n, [l.id]: e.target.value }))} /></Field></div>
+            {nextBlank > 0 && <button className="btn btn-ghost btn-sm" style={{ marginTop: 8 }} onClick={() => setCur(nextBlank)}>Đến dòng chưa đếm tiếp theo →</button>}
+          </Modal>
+        );
+      })()}
       {confirmBlank && <Modal size="narrow" title="Nộp phiếu kiểm kê" onClose={() => setConfirmBlank(false)} footer={<>
         <button className="btn" onClick={() => setConfirmBlank(false)}>Quay lại đếm tiếp</button>
         <button className="btn btn-primary" disabled={busy} onClick={async () => { setConfirmBlank(false); await save(true); }}><Send size={16} /> Nộp, tính dòng trống là 0</button>

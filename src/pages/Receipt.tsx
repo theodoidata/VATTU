@@ -1,8 +1,8 @@
 import { useMemo, useState } from 'react';
-import { Plus, Trash2, Save, Pencil, Clock, X } from 'lucide-react';
+import { Plus, Trash2, Save, Pencil, Clock, X, ChevronLeft, ChevronRight } from 'lucide-react';
 import { useApp } from '../lib/app-context';
-import { Empty, Field, ItemPicker, Loading, Modal, PageHeader, QtyInput, UnitCell, UnitInput, readDraft, useAction, useFormDraft, useRpc, usePaged, useUnits } from '../components/ui';
-import { addDays, fmtDate, fmtDateTime, fmtQty, hasPack } from '../lib/format';
+import { Empty, Field, ItemPicker, Loading, Modal, PageHeader, QtyInput, UnitCell, UnitInput, readDraft, useAction, useFormDraft, useRpc, usePaged, useUnits, useIsMobile } from '../components/ui';
+import { addDays, fmtDate, fmtDateTime, fmtQty, fmtUnits, hasPack } from '../lib/format';
 import type { Item, ReceiptDoc } from '../lib/types';
 
 type Line = { key: number; item_id: number | null; qty: string; unit_mode: 'base' | 'purchase'; lot_no: string; expiry_date: string };
@@ -108,13 +108,90 @@ function ReceiptForm() {
   const setLines = (fn: (ls: Line[]) => Line[]) => setForm(f => ({ ...f, lines: fn(f.lines) }));
   const { run, busy } = useAction();
   const { valid, missingLot, payload } = useLineCheck(form.lines);
+  const isMobile = useIsMobile();
+  const [wiz, setWiz] = useState(0);
+  const items = useRpc<Item[]>('list_items');
+  const active = useMemo(() => (items.data ?? []).filter(i => i.active), [items.data]);
+  const byId = useMemo(() => new Map(active.map(i => [i.id, i])), [active]);
+  const setL = (key: number, patch: Partial<Line>) => setLines(ls => ls.map(l => (l.key === key ? { ...l, ...patch } : l)));
 
   async function submit() {
     const r = await run('record_receipt', { branch_id: branchId, receipt_date: form.date, supplier: form.supplier, note: form.note, source: form.source, lines: payload },
       `Đã nhập kho ${valid.length} vật tư`);
-    if (r) { draft.clear(); setForm({ ...empty, date: form.date }); }
+    if (r) { draft.clear(); setForm({ ...empty, date: form.date }); setWiz(0); }
   }
   const discard = () => { draft.clear(); setForm(empty); };
+  const saveDraft = () => { if (draft.save()) toast('Đã lưu tạm phiếu trên máy này. Lần sau mở Nhập kho sẽ tự hiện lại.', 'success'); else toast('Trình duyệt chặn lưu tạm.', 'danger'); };
+
+  // ---------- Điện thoại: nút mở popup 3 bước ----------
+  if (isMobile) return (
+    <section className="panel">
+      <button className="btn btn-primary" style={{ width: '100%', height: 44, justifyContent: 'center', fontSize: 15 }} onClick={() => setWiz(1)}>
+        <Plus size={18} /> {valid.length ? `Tiếp tục phiếu đang nhập (${valid.length} vật tư)` : 'Nhập kho'}</button>
+      {draft.saved && valid.length > 0 && <div className="row small muted" style={{ marginTop: 8, justifyContent: 'center' }}><Clock size={13} /> Lưu tạm lúc {fmtDateTime(draft.saved.at)}
+        <button className="btn btn-ghost btn-sm" onClick={discard}><X size={13} /> Bỏ</button></div>}
+      {wiz > 0 && <Modal onClose={() => setWiz(0)}
+        title={<span className="guide-title"><small>NHẬP KHO · BƯỚC {wiz}/3</small>{['', 'Vật tư & số lượng', 'Số lô & hạn dùng', 'Thông tin phiếu'][wiz]}</span>}
+        footer={<>
+          {wiz > 1 ? <button className="btn" onClick={() => setWiz(wiz - 1)}><ChevronLeft size={16} /> Quay lại</button> : <button className="btn" onClick={() => setWiz(0)}>Đóng</button>}
+          <span className="spacer" />
+          {wiz < 3 ? <button className="btn btn-primary" disabled={!valid.length || (wiz === 2 && missingLot)} onClick={() => setWiz(wiz + 1)}>Tiếp{wiz === 1 ? ` (${valid.length} vật tư)` : ''} <ChevronRight size={16} /></button>
+            : <><button className="btn" onClick={saveDraft}><Clock size={16} /> Lưu tạm</button>
+              <button className="btn btn-primary" disabled={busy || !valid.length || missingLot} onClick={submit}><Save size={16} /> Lưu phiếu</button></>}
+        </>}>
+        <div className="wiz-steps">{[1, 2, 3].map(i => <span key={i} className={i <= wiz ? 'on' : ''} />)}</div>
+        {wiz === 1 && <>
+          {form.lines.map((l, idx) => {
+            const it = l.item_id ? byId.get(l.item_id) : undefined;
+            const pack = hasPack(it);
+            return (
+              <div key={l.key} className="wiz-card">
+                <div className="wiz-card-head">
+                  <div><ItemPicker items={active} value={l.item_id} placeholder={`Tìm vật tư ${idx + 1}…`}
+                    onChange={id => setL(l.key, { item_id: id, unit_mode: byId.get(id)?.purchase_unit ? 'purchase' : 'base' })}
+                    exclude={form.lines.filter(x => x.key !== l.key).map(x => x.item_id!).filter(Boolean)} /></div>
+                  <button className="btn btn-ghost btn-sm icon-only" aria-label="Xóa dòng" onClick={() => setLines(ls => ls.length > 1 ? ls.filter(x => x.key !== l.key) : [newLine()])}><Trash2 size={15} /></button>
+                </div>
+                {it && <div className="wiz-row"><span className="small muted">Số lượng</span>
+                  {pack ? <QtyInput value={l.qty === '' ? '' : String(baseQty(l, it))} onChange={v => setL(l.key, { qty: v, unit_mode: 'base' })} unit={it} />
+                    : <><input className="input sm num" type="number" min={0} step="any" style={{ width: 90, textAlign: 'right' }} value={l.qty}
+                        onChange={e => setL(l.key, { qty: e.target.value, unit_mode: 'base' })} /><span className="small muted">{it.unit}</span></>}
+                  {it.track_lot && <span className="small text-warning" style={{ marginLeft: 'auto' }}>cần lô/HSD</span>}</div>}
+              </div>
+            );
+          })}
+          <button className="btn btn-sm" onClick={() => setLines(ls => [...ls, newLine()])}><Plus size={14} /> Thêm vật tư</button>
+        </>}
+        {wiz === 2 && valid.map(l => {
+          const it = byId.get(l.item_id!);
+          const need = it?.track_lot;
+          return (
+            <div key={l.key} className="wiz-card">
+              <div><b>{it?.name}</b> <span className="small muted">· {fmtUnits(baseQty(l, it), it)}</span>{need && <span className="small text-warning"> · bắt buộc</span>}</div>
+              <div className="form-grid">
+                <Field label={need ? 'Số lô *' : 'Số lô (không bắt buộc)'}><input className="input" value={l.lot_no} onChange={e => setL(l.key, { lot_no: e.target.value })}
+                  style={need && !l.lot_no.trim() ? { borderColor: 'var(--td-danger)' } : undefined} /></Field>
+                <Field label={need ? 'Hạn sử dụng *' : 'Hạn sử dụng'}><input className="input" type="date" value={l.expiry_date} min={form.date} onChange={e => setL(l.key, { expiry_date: e.target.value })}
+                  style={need && !l.expiry_date ? { borderColor: 'var(--td-danger)' } : undefined} /></Field>
+              </div>
+            </div>
+          );
+        })}
+        {wiz === 3 && <>
+          <div className="wiz-sum"><b>{valid.length} vật tư</b>
+            <ul>{valid.map(l => { const it = byId.get(l.item_id!); return <li key={l.key}>{it?.name}: <b>{fmtUnits(baseQty(l, it), it)}</b>{l.lot_no ? ` · lô ${l.lot_no}` : ''}</li>; })}</ul></div>
+          <div className="form-grid">
+            <Field label="Ngày nhập"><input className="input" type="date" value={form.date} max={today} onChange={e => up({ date: e.target.value })} /></Field>
+            <Field label="Nhà cung cấp / nguồn hàng"><input className="input" value={form.supplier} onChange={e => up({ supplier: e.target.value })} placeholder="VD: Công ty ABC" /></Field>
+            {has('inv_all_branches') && <Field label="Loại nhập"><select className="select" value={form.source} onChange={e => up({ source: e.target.value })}>
+              <option>Nhập tay chi nhánh</option><option>Kế toán phân bổ</option><option>Tồn đầu kỳ</option></select></Field>}
+            <Field label="Ghi chú"><input className="input" value={form.note} onChange={e => up({ note: e.target.value })} placeholder="Số hóa đơn, người giao…" /></Field>
+          </div>
+        </>}
+      </Modal>}
+    </section>
+  );
+
   return (
     <section className="panel">
       <div className="panel-head"><h2>Phiếu nhập mới</h2>
@@ -133,8 +210,7 @@ function ReceiptForm() {
         <button className="btn" onClick={() => setLines(ls => [...ls, newLine()])}><Plus size={16} /> Thêm dòng</button>
         <span className="spacer" />
         {missingLot && <span className="small" style={{ color: 'var(--td-danger)' }}>Còn vật tư thiếu số lô / hạn dùng</span>}
-        <button className="btn" onClick={() => { if (draft.save()) toast('Đã lưu tạm phiếu trên máy này. Lần sau mở Nhập kho sẽ tự hiện lại.', 'success'); else toast('Trình duyệt chặn lưu tạm.', 'danger'); }}>
-          <Clock size={16} /> Lưu tạm</button>
+        <button className="btn" onClick={saveDraft}><Clock size={16} /> Lưu tạm</button>
         <button className="btn btn-primary" disabled={busy || !valid.length || missingLot} onClick={submit}><Save size={16} /> Lưu phiếu nhập</button>
       </div>
     </section>
@@ -149,12 +225,25 @@ function ReceiptHistory({ docs, from, to, setFrom, setTo }: {
   const [editing, setEditing] = useState<ReceiptDoc | null>(null);
   const canEdit = has('inv_receipt_edit');
   const U = useUnits();
+  const isMobile = useIsMobile();
   return (
     <section className="panel">
       <div className="panel-head"><h2>Lịch sử nhập kho</h2>
         <div className="row"><input className="input sm" type="date" value={from} onChange={e => setFrom(e.target.value)} /> → <input className="input sm" type="date" value={to} onChange={e => setTo(e.target.value)} /></div>
       </div>
-      {docs.loading ? <Loading /> : docs.error ? <div className="notice danger">{docs.error}</div> : !docs.data?.length ? <Empty>Chưa có phiếu nhập.</Empty> : (
+      {docs.loading ? <Loading /> : docs.error ? <div className="notice danger">{docs.error}</div> : !docs.data?.length ? <Empty>Chưa có phiếu nhập.</Empty> : isMobile ? (
+        <>{pg.shown.map(d => (
+          <div key={d.id} className="wiz-card">
+            <div className="wiz-card-head"><div><b>{fmtDate(d.receipt_date)}</b> <span className="item-code">#{d.id} · {d.source}</span>
+              {(d.supplier || d.note) && <div className="small muted">{[d.supplier, d.note].filter(Boolean).join(' · ')}</div>}
+              <div className="small muted">{d.created_by_name} · {fmtDateTime(d.created_at)}{d.updated_at ? ` · sửa bởi ${d.updated_by_name}` : ''}</div></div>
+              {canEdit && <button className="btn btn-sm" onClick={() => setEditing(d)}><Pencil size={13} /> Sửa</button>}</div>
+            <div style={{ display: 'grid', gap: 4 }}>{d.lines.map(ln => (
+              <div key={ln.id} className="row small" style={{ justifyContent: 'space-between', flexWrap: 'nowrap' }}>
+                <span style={{ minWidth: 0 }}>{ln.item_name}{ln.lot_no ? <span className="muted"> · lô {ln.lot_no}</span> : null}{ln.expiry_date ? <span className="muted"> · HSD {fmtDate(ln.expiry_date)}</span> : null}</span>
+                <b className="nowrap">{U(ln.qty, ln.item_id, ln.unit)}</b></div>))}</div>
+          </div>))}{pg.pager}</>
+      ) : (
         <><div className="table-wrap"><table className="data">
           <thead><tr><th>Ngày</th><th>Nguồn</th><th>Vật tư</th><th className="num">SL nhập</th><th className="num">Quy ra</th><th>Lô</th><th>Hạn dùng</th><th>Người nhập</th></tr></thead>
           <tbody>{pg.shown.flatMap(d => d.lines.map((ln, i) => (
