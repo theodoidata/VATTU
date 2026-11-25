@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { ArrowRightLeft, Check, Download, Package, Pencil, X } from 'lucide-react';
 import { useApp } from '../lib/app-context';
-import { Chips, Empty, ExpiryBadge, Field, FilterBlock, FilterPanel, GroupList, Loading, Modal, PageHeader, QtyInput, StockBadge, UnitInput, UNIT_OPTIONS, useAction, useRpc, usePaged } from '../components/ui';
+import { Chips, Empty, ExpiryBadge, Field, FilterBlock, FilterPanel, GroupList, Loading, Modal, PageHeader, QtyInput, StockBadge, UnitInput, UNIT_OPTIONS, useAction, useRpc, usePaged, useIsMobile } from '../components/ui';
 import { EXPIRY_LEVEL, STOCK_LEVEL, fmtDate, fmtQty, fmtUnits, hasPack, norm, rowAlerts } from '../lib/format';
 import type { Lot, StockRow } from '../lib/types';
 import { handoff } from '../lib/handoff';
@@ -16,8 +16,11 @@ export default function StockPage() {
   const branch = branches.find(b => b.id === branchId);
   // Mặc định chỉ tải vật tư đang có tồn / có mức tối thiểu (đỡ tốn dữ liệu); bật "showAll" để tải cả danh mục
   const [showAll, setShowAll] = useState(false);
-  const { data, loading, error } = useRpc<StockRow[]>('get_stock', showAll ? { branch_id: branchId, all: true } : { branch_id: branchId });
   const [q, setQ] = useState('');
+  const isMobile = useIsMobile();
+  // Đang gõ tìm thì tìm trong toàn bộ danh mục (kể cả vật tư chưa có tồn ở chi nhánh này)
+  const searching = q.trim() !== '';
+  const { data, loading, error } = useRpc<StockRow[]>('get_stock', showAll || searching ? { branch_id: branchId, all: true } : { branch_id: branchId });
   const [group, setGroup] = useState<number | ''>('');
   const [init] = useState(() => { const f = handoff.stockFilter; handoff.stockFilter = undefined; return f; });
   const [stockSel, setStockSel] = useState<StockSel>(init === 'below' ? 'below' : init === 'alert' ? 'alert' : 'all');
@@ -91,7 +94,7 @@ export default function StockPage() {
         description="Bấm vào một vật tư để xem lô, hạn dùng và tồn ở các chi nhánh khác."
         actions={has('inv_report_export') && <button className="btn" onClick={doExport} disabled={!rows.length}><Download size={16} /> Xuất Excel</button>} />
       <div className="list-layout">
-        <FilterPanel active={activeFilters} onClear={clear}>
+        {!isMobile && <FilterPanel active={activeFilters} onClear={clear}>
           <FilterBlock title="Nhóm hàng">
             <GroupList groups={groups} counts={groupCounts} value={group} onChange={setGroup} />
           </FilterBlock>
@@ -113,14 +116,14 @@ export default function StockPage() {
           <FilterBlock title="Phạm vi">
             <label className="check small"><input type="checkbox" checked={showAll} onChange={e => setShowAll(e.target.checked)} /> Hiện cả vật tư không có tồn</label>
           </FilterBlock>
-        </FilterPanel>
+        </FilterPanel>}
 
         <section className="panel">
           <div className="toolbar">
             <input className="input" placeholder="Tìm theo mã, tên vật tư (gõ không dấu được)…" value={q} onChange={e => setQ(e.target.value)} />
             <span className="muted small">{rows.length} vật tư</span>
           </div>
-          {loading ? <Loading /> : error ? <div className="notice danger">{error}</div> : rows.length === 0 ? <Empty>{showAll ? 'Không có vật tư phù hợp.' : 'Không có vật tư phù hợp. Vật tư chưa có tồn đang được ẩn, tick “Hiện cả vật tư không có tồn” để xem.'}</Empty> : (
+          {loading ? <Loading /> : error ? <div className="notice danger">{error}</div> : rows.length === 0 ? <Empty>{showAll || searching ? 'Không tìm thấy vật tư phù hợp.' : isMobile ? 'Chi nhánh chưa có vật tư nào đang tồn. Gõ tên vào ô tìm để tra trong toàn bộ danh mục.' : 'Không có vật tư phù hợp. Vật tư chưa có tồn đang được ẩn, tick “Hiện cả vật tư không có tồn” để xem.'}</Empty> : (
             <><div className="table-wrap cards-sm"><table className="data fixed-cols">
               <thead><tr><th style={{ width: 84 }}>Mã</th><th>Tên vật tư</th><th className="hide-sm" style={{ width: 130 }}>Nhóm</th><th className="num" style={{ width: 100 }}>Tồn</th><th className="num" style={{ width: 104 }}>Còn dùng được</th><th className="num" style={{ width: 96 }}>Tối thiểu</th><th style={{ width: 104 }}>Trạng thái</th><th style={{ width: 112 }}>Hạn gần nhất</th></tr></thead>
               <tbody>{pg.shown.map(r => (

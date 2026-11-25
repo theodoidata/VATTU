@@ -111,7 +111,7 @@ function useRange(days = 30) {
   const { today } = useApp();
   const [from, setFrom] = useState(addDays(today, -days));
   const [to, setTo] = useState(today);
-  const el = <div className="row"><input className="input sm" type="date" value={from} onChange={e => setFrom(e.target.value)} /> → <input className="input sm" type="date" value={to} onChange={e => setTo(e.target.value)} /></div>;
+  const el = <div className="row date-range"><input className="input sm" type="date" value={from} onChange={e => setFrom(e.target.value)} /> → <input className="input sm" type="date" value={to} onChange={e => setTo(e.target.value)} /></div>;
   return { from, to, el };
 }
 
@@ -142,7 +142,7 @@ function TransferReport() {
       <div className="toolbar">
         {r.el}
         {has('inv_report_view_all') && <BranchSelect value={branch} onChange={setBranch} includeAll="Tất cả chi nhánh" />}
-        <select className="select sm" value={status} onChange={e => setStatus(e.target.value as TransferStatus | '')}>
+        <select className="select sm hide-mobile" value={status} onChange={e => setStatus(e.target.value as TransferStatus | '')}>
           <option value="">Mọi trạng thái</option>{Object.entries(TRANSFER_STATUS).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
         </select>
         <span className="spacer" /><ExportBtn onClick={doExport} disabled={!flat.length} />

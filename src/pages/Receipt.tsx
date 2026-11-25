@@ -228,7 +228,7 @@ function ReceiptHistory({ docs, from, to, setFrom, setTo }: {
   return (
     <section className="panel">
       <div className="panel-head"><h2>Lịch sử nhập kho</h2>
-        <div className="row"><input className="input sm" type="date" value={from} onChange={e => setFrom(e.target.value)} /> → <input className="input sm" type="date" value={to} onChange={e => setTo(e.target.value)} /></div>
+        <div className="row date-range"><input className="input sm" type="date" value={from} onChange={e => setFrom(e.target.value)} /> → <input className="input sm" type="date" value={to} onChange={e => setTo(e.target.value)} /></div>
       </div>
       {docs.loading ? <Loading /> : docs.error ? <div className="notice danger">{docs.error}</div> : !docs.data?.length ? <Empty>Chưa có phiếu nhập.</Empty> : isMobile ? (
         <>{pg.shown.map(d => (

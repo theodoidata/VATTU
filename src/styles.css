@@ -516,3 +516,15 @@ table.data.fixed-cols th { white-space: normal; line-height: 1.25; }
 .wiz-qty > .qty-pack .qp-u { min-width: 0; font-size: 11px; }
 /* Gợi ý tìm vật tư: dòng riêng ngay dưới, trải hết bề ngang thẻ (ô tên vật tư không bị giãn) */
 .wiz-line .combo-list { position: static !important; grid-column: 1 / -1; grid-row: 2; width: auto !important; margin-top: 0 !important; }
+
+@media (max-width: 760px) {
+  /* Hai ô ngày nằm ngang nhau */
+  .date-range { display: flex; flex-wrap: nowrap; gap: 6px; flex: 1 1 100%; width: 100%; }
+  .date-range input { flex: 1 1 0; min-width: 0; width: auto; font-size: 14px !important; padding: 0 6px; }
+  .panel-head { flex-wrap: wrap; gap: 8px; }
+  /* Ô chi nhánh trên thanh trên cùng: chữ nhỏ lại để không mất chữ */
+  .topbar select.branch-pill, .topbar .branch-pill { font-size: 13px !important; max-width: 118px; padding: 0 4px 0 8px; }
+}
+@media (max-width: 760px) {
+  .cards-sm td, .cards-sm td.nowrap, .cards-sm td * { white-space: normal; overflow-wrap: anywhere; }
+}
