@@ -227,7 +227,8 @@ export function ItemPicker({ items, value, onChange, placeholder = 'Tìm vật t
         }} />
       {open && (isMobile || pos) && (
         <div className="combo-list" style={isMobile ? { position: 'static', width: '100%', minWidth: 0, maxHeight: 260, marginTop: 4 }
-          : { position: 'fixed', left: pos!.left, top: pos!.top, bottom: pos!.bottom, right: 'auto', width: pos!.width, maxHeight: pos!.maxH, zIndex: 400 }}>
+          // top/bottom phải ghi rõ 'auto' — nếu không, "top" mặc định của .combo-list đẩy danh sách mở lên trên ra khỏi màn hình
+          : { position: 'fixed', left: pos!.left, top: pos!.top ?? 'auto', bottom: pos!.bottom ?? 'auto', right: 'auto', width: pos!.width, maxHeight: pos!.maxH, zIndex: 400 }}>
           {list.length === 0 && <div className="empty small">{items.length === 0 && emptyText ? emptyText : 'Không tìm thấy vật tư'}</div>}
           {list.map((i, idx) => {
             const head = i.group_name !== lastGroup ? <div className="grp">{i.group_name ?? 'Khác'}</div> : null;

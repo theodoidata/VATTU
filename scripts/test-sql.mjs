@@ -196,6 +196,23 @@ await ok('Sửa phiếu nhập: tăng / giảm / bỏ dòng, tồn điều chỉ
   assert(await lot('TT-LIDO', 'SUA1') === 1, 'lỗi giữa chừng không được làm đổi tồn');
 });
 
+await ok('Xóa phiếu nhập: trừ lại tồn; lô đã dùng thì không xóa được', async () => {
+  const id = await item('TT-MEPI');
+  const lot = async n => Number((await db.query("select coalesce(sum(qty),0) q from stock_lots where branch_id=5 and lot_no=$1", [n])).rows[0].q);
+  const r1 = await call(U(2), 'record_receipt', { branch_id: 5, lines: [{ item_id: id, qty: 6, unit_mode: 'base', lot_no: 'XOA1', expiry_date: '2031-01-01' }] });
+  const d1 = r1.id ?? r1.doc_id ?? (await db.query('select max(id) id from receipt_docs')).rows[0].id;
+  assert(await lot('XOA1') === 6, 'nhập chưa đúng');
+  assert(await throws(() => call(U(2), 'delete_receipt', { id: d1 })), 'QL chi nhánh không được xóa');
+  await call(U(1), 'delete_receipt', { id: d1, reason: 'nhập nhầm' });
+  assert(await lot('XOA1') === 0, 'xóa phiếu phải trừ hết lô');
+  assert((await db.query('select count(*) c from receipt_docs where id=$1', [d1])).rows[0].c == 0, 'phiếu vẫn còn');
+  const r2 = await call(U(2), 'record_receipt', { branch_id: 5, lines: [{ item_id: id, qty: 4, unit_mode: 'base', lot_no: 'XOA2', expiry_date: '2031-01-01' }] });
+  const d2 = r2.id ?? r2.doc_id ?? (await db.query('select max(id) id from receipt_docs')).rows[0].id;
+  await call(U(3), 'record_usage', { branch_id: 5, lines: [{ item_id: id, qty: 1, reason: 'Điều trị', lot_id: (await db.query("select id from stock_lots where branch_id=5 and lot_no='XOA2'")).rows[0].id }] });
+  assert(await throws(() => call(U(1), 'delete_receipt', { id: d2 })), 'lô đã dùng phải báo lỗi');
+  assert(await lot('XOA2') === 3, 'lỗi thì tồn giữ nguyên');
+});
+
 await ok('Cấp hàng chủ động: Hạ Long cấp cho Mạo Khê, trừ kho ngay, Mạo Khê nhận', async () => {
   const s = (await call(U(3), 'get_stock')).find(x => Number(x.usable_qty) >= 3 && !x.lots.some(l => l.expiry_date && l.expiry_date < '2000'));
   const hl0 = Number(s.qty); const mk0 = Number((await db.query('select coalesce(sum(qty),0) q from stock_lots where branch_id=8 and item_id=$1', [s.id])).rows[0].q);

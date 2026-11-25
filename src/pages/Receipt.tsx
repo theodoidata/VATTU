@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { Plus, Trash2, Save, Pencil, Clock, X, ChevronLeft, ChevronRight } from 'lucide-react';
 import { useApp } from '../lib/app-context';
-import { Empty, Field, ItemPicker, Loading, Modal, PageHeader, QtyInput, UnitCell, UnitInput, readDraft, useAction, useFormDraft, useRpc, usePaged, useUnits, useIsMobile } from '../components/ui';
+import { Empty, Field, ItemPicker, Loading, Modal, PageHeader, QtyInput, ReasonModal, UnitCell, UnitInput, readDraft, useAction, useFormDraft, useRpc, usePaged, useUnits, useIsMobile } from '../components/ui';
 import { addDays, fmtDate, fmtDateTime, fmtQty, fmtUnits, hasPack } from '../lib/format';
 import type { Item, ReceiptDoc } from '../lib/types';
 
@@ -222,6 +222,8 @@ function ReceiptHistory({ docs, from, to, setFrom, setTo }: {
   const { branchId, has } = useApp();
   const pg = usePaged(docs.data ?? [], [branchId, from, to]);
   const [editing, setEditing] = useState<ReceiptDoc | null>(null);
+  const [deleting, setDeleting] = useState<ReceiptDoc | null>(null);
+  const { run, busy } = useAction();
   const canEdit = has('inv_receipt_edit');
   const U = useUnits();
   const isMobile = useIsMobile();
@@ -236,7 +238,8 @@ function ReceiptHistory({ docs, from, to, setFrom, setTo }: {
             <div className="wiz-card-head"><div><b>{fmtDate(d.receipt_date)}</b> <span className="item-code">#{d.id} · {d.source}</span>
               {(d.supplier || d.note) && <div className="small muted">{[d.supplier, d.note].filter(Boolean).join(' · ')}</div>}
               <div className="small muted">{d.created_by_name} · {fmtDateTime(d.created_at)}{d.updated_at ? ` · sửa bởi ${d.updated_by_name}` : ''}</div></div>
-              {canEdit && <button className="btn btn-sm" onClick={() => setEditing(d)}><Pencil size={13} /> Sửa</button>}</div>
+              {canEdit && <span className="row" style={{ gap: 4, flexWrap: 'nowrap' }}><button className="btn btn-sm" onClick={() => setEditing(d)}><Pencil size={13} /> Sửa</button>
+                <button className="btn btn-sm btn-danger" onClick={() => setDeleting(d)} aria-label="Xóa phiếu"><Trash2 size={13} /></button></span>}</div>
             <div style={{ display: 'grid', gap: 4 }}>{d.lines.map(ln => (
               <div key={ln.id} className="row small" style={{ justifyContent: 'space-between', flexWrap: 'nowrap' }}>
                 <span style={{ minWidth: 0 }}>{ln.item_name}{ln.lot_no ? <span className="muted"> · lô {ln.lot_no}</span> : null}{ln.expiry_date ? <span className="muted"> · HSD {fmtDate(ln.expiry_date)}</span> : null}</span>
@@ -255,12 +258,19 @@ function ReceiptHistory({ docs, from, to, setFrom, setTo }: {
               <td className="mono small">{ln.lot_no || '—'}</td><td className="small">{fmtDate(ln.expiry_date)}</td>
               {i === 0 && <td rowSpan={d.lines.length} className="small">{d.created_by_name}<div className="item-code">{fmtDateTime(d.created_at)}</div>
                 {d.updated_at && <div className="item-code" style={{ color: 'var(--td-warning, #b45309)' }}>Sửa: {d.updated_by_name} · {fmtDateTime(d.updated_at)}</div>}
-                {canEdit && <button className="btn btn-sm" style={{ marginTop: 4 }} onClick={() => setEditing(d)}><Pencil size={13} /> Sửa</button>}</td>}
+                {canEdit && <div className="row" style={{ gap: 4, marginTop: 4, flexWrap: 'nowrap' }}><button className="btn btn-sm" onClick={() => setEditing(d)}><Pencil size={13} /> Sửa</button>
+                  <button className="btn btn-sm btn-danger" onClick={() => setDeleting(d)}><Trash2 size={13} /> Xóa</button></div>}</td>}
             </tr>
           )))}</tbody>
         </table></div>{pg.pager}</>
       )}
       {editing && <EditReceiptModal doc={editing} onClose={() => setEditing(null)} />}
+      {deleting && <ReasonModal title={`Xóa phiếu nhập #${deleting.id}`} label="Lý do xóa (không bắt buộc)" required={false} confirmText="Xóa phiếu & trừ tồn" tone="danger" busy={busy}
+        onClose={() => setDeleting(null)}
+        onConfirm={async reason => { if (await run('delete_receipt', { id: deleting.id, reason }, `Đã xóa phiếu nhập #${deleting.id}, tồn kho đã trừ lại`)) setDeleting(null); }}>
+        <p className="small" style={{ marginTop: 0 }}>Phiếu ngày {fmtDate(deleting.receipt_date)} · {deleting.lines.length} vật tư: {deleting.lines.slice(0, 4).map(l => l.item_name).join(', ')}{deleting.lines.length > 4 ? '…' : ''}.</p>
+        <p className="small muted">Số đã nhập sẽ được trừ khỏi tồn kho đúng lô. Nếu hàng của phiếu đã xuất dùng / chuyển đi thì không xóa được — khi đó hãy sửa phiếu hoặc kiểm kê.</p>
+      </ReasonModal>}
     </section>
   );
 }

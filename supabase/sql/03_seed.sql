@@ -24,7 +24,7 @@ insert into permissions (key, group_name, label, description, sort_order) values
   ('inv_usage_create',      'Xuất dùng',   'Ghi xuất dùng hằng ngày', 'Trừ tồn theo lô hết hạn sớm nhất trước.', 20),
   ('inv_usage_void',        'Xuất dùng',   'Hủy phiếu xuất trong ngày', 'Hoàn lại tồn khi ghi nhầm.', 21),
   ('inv_receipt_create',    'Nhập kho',    'Nhập kho (nhập tay)', 'Tạm thời chi nhánh tự nhập; sau này Kế toán nhập và phân bổ.', 30),
-  ('inv_receipt_edit',      'Nhập kho',    'Sửa phiếu nhập đã lưu', 'Dành cho BGĐ / Kế toán: sửa số lượng, lô, hạn dùng, bỏ dòng nhập nhầm; tồn kho tự điều chỉnh theo chênh lệch.', 31),
+  ('inv_receipt_edit',      'Nhập kho',    'Sửa / xóa phiếu nhập đã lưu', 'Dành cho BGĐ / Kế toán: sửa số lượng, lô, hạn dùng, bỏ dòng hoặc xóa cả phiếu nhập nhầm; tồn kho tự điều chỉnh theo chênh lệch.', 31),
   ('inv_transfer_request',  'Điều chuyển', 'Tạo / hủy yêu cầu điều chuyển', 'Chi nhánh thiếu hàng (A) xin hàng từ chi nhánh khác (B).', 40),
   ('inv_transfer_approve',  'Điều chuyển', 'Duyệt / từ chối yêu cầu (bên cấp hàng)', 'Chi nhánh B quyết định số lượng đồng ý cấp.', 41),
   ('inv_transfer_ship',     'Điều chuyển', 'Xác nhận đã gửi hàng', 'Trừ kho chi nhánh B.', 42),

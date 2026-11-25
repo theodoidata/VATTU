@@ -758,6 +758,37 @@ begin
   return jsonb_build_object('ok', true, 'id', d.id);
 end $$;
 
+-- Xóa phiếu nhập (BGĐ / Kế toán): trừ lại đúng số đã nhập theo từng lô rồi xóa phiếu.
+-- Lô đã xuất dùng / chuyển đi thì không xóa được (báo lỗi, không đổi gì).
+create or replace function public.delete_receipt(p jsonb) returns jsonb
+language plpgsql security definer set search_path = public, app as $$
+declare
+  d       receipt_docs;
+  v_why   text;
+  v_lotid bigint;
+  v_have  numeric;
+  l       record;
+begin
+  perform app.require('inv_receipt_edit');
+  select * into d from receipt_docs where id = nullif(p->>'id', '')::bigint for update;
+  if d.id is null then raise exception 'Không tìm thấy phiếu nhập.'; end if;
+  perform app.require_branch(d.branch_id);
+  v_why := 'Xóa phiếu nhập #' || d.id || coalesce(': ' || nullif(trim(coalesce(p->>'reason', '')), ''), '');
+  for l in select item_id, lot_no, expiry_date, sum(qty) q from receipt_lines where doc_id = d.id group by 1, 2, 3 loop
+    v_lotid := null; v_have := null;
+    select id, qty into v_lotid, v_have from stock_lots
+     where branch_id = d.branch_id and item_id = l.item_id and lot_no = l.lot_no
+       and coalesce(expiry_date, '9999-12-31'::date) = coalesce(l.expiry_date, '9999-12-31'::date);
+    if v_lotid is null or v_have < l.q then
+      raise exception '% — lô % chỉ còn % trong kho (đã xuất dùng / chuyển đi), không xóa được phiếu. Hãy sửa phiếu hoặc dùng Kiểm kê.',
+        app.item_label(l.item_id), coalesce(nullif(l.lot_no, ''), '(không số lô)'), app.fmt(coalesce(v_have, 0));
+    end if;
+    perform app.take_stock(d.branch_id, l.item_id, l.q, 'adjust', app.today(), v_why, 'receipt', d.id, v_lotid, true);
+  end loop;
+  delete from receipt_docs where id = d.id;
+  return jsonb_build_object('ok', true, 'id', d.id);
+end $$;
+
 create or replace function public.list_receipts(p jsonb default '{}'::jsonb) returns jsonb
 language plpgsql stable security definer set search_path = public, app as $$
 declare

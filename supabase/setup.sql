@@ -1028,6 +1028,37 @@ begin
   return jsonb_build_object('ok', true, 'id', d.id);
 end $$;
 
+-- Xóa phiếu nhập (BGĐ / Kế toán): trừ lại đúng số đã nhập theo từng lô rồi xóa phiếu.
+-- Lô đã xuất dùng / chuyển đi thì không xóa được (báo lỗi, không đổi gì).
+create or replace function public.delete_receipt(p jsonb) returns jsonb
+language plpgsql security definer set search_path = public, app as $$
+declare
+  d       receipt_docs;
+  v_why   text;
+  v_lotid bigint;
+  v_have  numeric;
+  l       record;
+begin
+  perform app.require('inv_receipt_edit');
+  select * into d from receipt_docs where id = nullif(p->>'id', '')::bigint for update;
+  if d.id is null then raise exception 'Không tìm thấy phiếu nhập.'; end if;
+  perform app.require_branch(d.branch_id);
+  v_why := 'Xóa phiếu nhập #' || d.id || coalesce(': ' || nullif(trim(coalesce(p->>'reason', '')), ''), '');
+  for l in select item_id, lot_no, expiry_date, sum(qty) q from receipt_lines where doc_id = d.id group by 1, 2, 3 loop
+    v_lotid := null; v_have := null;
+    select id, qty into v_lotid, v_have from stock_lots
+     where branch_id = d.branch_id and item_id = l.item_id and lot_no = l.lot_no
+       and coalesce(expiry_date, '9999-12-31'::date) = coalesce(l.expiry_date, '9999-12-31'::date);
+    if v_lotid is null or v_have < l.q then
+      raise exception '% — lô % chỉ còn % trong kho (đã xuất dùng / chuyển đi), không xóa được phiếu. Hãy sửa phiếu hoặc dùng Kiểm kê.',
+        app.item_label(l.item_id), coalesce(nullif(l.lot_no, ''), '(không số lô)'), app.fmt(coalesce(v_have, 0));
+    end if;
+    perform app.take_stock(d.branch_id, l.item_id, l.q, 'adjust', app.today(), v_why, 'receipt', d.id, v_lotid, true);
+  end loop;
+  delete from receipt_docs where id = d.id;
+  return jsonb_build_object('ok', true, 'id', d.id);
+end $$;
+
 create or replace function public.list_receipts(p jsonb default '{}'::jsonb) returns jsonb
 language plpgsql stable security definer set search_path = public, app as $$
 declare
@@ -1687,7 +1718,7 @@ insert into permissions (key, group_name, label, description, sort_order) values
   ('inv_usage_create',      'Xuất dùng',   'Ghi xuất dùng hằng ngày', 'Trừ tồn theo lô hết hạn sớm nhất trước.', 20),
   ('inv_usage_void',        'Xuất dùng',   'Hủy phiếu xuất trong ngày', 'Hoàn lại tồn khi ghi nhầm.', 21),
   ('inv_receipt_create',    'Nhập kho',    'Nhập kho (nhập tay)', 'Tạm thời chi nhánh tự nhập; sau này Kế toán nhập và phân bổ.', 30),
-  ('inv_receipt_edit',      'Nhập kho',    'Sửa phiếu nhập đã lưu', 'Dành cho BGĐ / Kế toán: sửa số lượng, lô, hạn dùng, bỏ dòng nhập nhầm; tồn kho tự điều chỉnh theo chênh lệch.', 31),
+  ('inv_receipt_edit',      'Nhập kho',    'Sửa / xóa phiếu nhập đã lưu', 'Dành cho BGĐ / Kế toán: sửa số lượng, lô, hạn dùng, bỏ dòng hoặc xóa cả phiếu nhập nhầm; tồn kho tự điều chỉnh theo chênh lệch.', 31),
   ('inv_transfer_request',  'Điều chuyển', 'Tạo / hủy yêu cầu điều chuyển', 'Chi nhánh thiếu hàng (A) xin hàng từ chi nhánh khác (B).', 40),
   ('inv_transfer_approve',  'Điều chuyển', 'Duyệt / từ chối yêu cầu (bên cấp hàng)', 'Chi nhánh B quyết định số lượng đồng ý cấp.', 41),
   ('inv_transfer_ship',     'Điều chuyển', 'Xác nhận đã gửi hàng', 'Trừ kho chi nhánh B.', 42),
