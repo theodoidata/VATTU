@@ -34,7 +34,7 @@ export default function StocktakePage() {
         actions={has('inv_stocktake_count') && canAct(branchId) && <button className="btn btn-primary" disabled={hasOpen} title={hasOpen ? 'Đang có phiếu chưa chốt' : ''} onClick={() => setCreating(true)}><Plus size={16} /> Tạo phiếu kiểm kê</button>} />
       <section className="panel">
         {list.loading ? <Loading /> : list.error ? <div className="notice danger">{list.error}</div> : !list.data?.length ? <Empty>Chưa có phiếu kiểm kê nào.</Empty> : (
-          <><div className="table-wrap"><table className="data">
+          <><div className="table-wrap cards-sm"><table className="data">
             <thead><tr><th>Phiếu</th><th>Phạm vi</th><th>Trạng thái</th><th className="num">Đã đếm</th><th className="num">Dòng lệch</th><th>Tạo bởi</th><th>Chốt bởi</th></tr></thead>
             <tbody>{pg.shown.map(s => (
               <tr key={s.id} className="clickable" onClick={() => setOpenId(s.id)}>
@@ -148,7 +148,7 @@ function StocktakeDetail({ id, onBack }: { id: number; onBack: () => void }) {
           <span className="muted small">Đã đếm {counted}/{lines.length} · lệch {diffs.length}</span>
         </div>
         {editable && !showSys && <p className="muted small" style={{ marginTop: 0 }}>Đang ẩn số sổ sách để đếm khách quan. Không còn hàng thì nhập 0.</p>}
-        <><div className="table-wrap"><table className="data lines-table">
+        <><div className="table-wrap cards-sm"><table className="data lines-table">
           <thead><tr><th>Vật tư</th><th style={{ width: 120 }}>Số lô</th><th style={{ width: 110 }}>Hạn dùng</th>{showSystem && <th className="num" style={{ width: 90 }}>Sổ sách</th>}<th className="num" style={{ width: 160 }}>Thực đếm</th>{editable && <th style={{ width: 100 }}>Đơn vị</th>}{showSystem && <th className="num" style={{ width: 90 }}>Lệch</th>}<th style={{ width: '22%' }}>Ghi chú</th></tr></thead>
           <tbody>{pgL.shown.map(l => {
             const v = val(l); const d = v === '' ? null : Number(v) - Number(l.system_qty);

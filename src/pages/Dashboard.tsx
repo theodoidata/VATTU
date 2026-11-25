@@ -57,7 +57,7 @@ export default function Dashboard() {
             )}
           </div>
           {stock.loading ? <Loading /> : stock.error ? <div className="notice danger">{stock.error}</div> : s.short.length === 0 ? <Empty>Tất cả vật tư đều trên mức tối thiểu 👍</Empty> : (
-            <div className="table-wrap"><table className="data">
+            <div className="table-wrap cards-sm"><table className="data">
               <thead><tr><th>Vật tư</th><th className="num">Còn dùng được</th><th className="num">Tối thiểu</th><th>Trạng thái</th></tr></thead>
               <tbody>{s.short.slice(0, 12).map(r => (
                 <tr key={r.id}><td><div className="item-name">{r.name}</div><div className="item-code">{r.code} · {r.group_name}</div></td>
@@ -86,7 +86,7 @@ export default function Dashboard() {
           <section className="panel">
             <div className="panel-head"><h2>Sắp hết hạn / đã hết hạn</h2></div>
             {stock.loading ? <Loading /> : s.lots.length === 0 ? <Empty>Không có lô nào hết hạn trong 90 ngày tới.</Empty> : (
-              <div className="table-wrap"><table className="data">
+              <div className="table-wrap cards-sm"><table className="data">
                 <thead><tr><th>Vật tư</th><th>Lô</th><th className="num">SL</th><th>Hạn dùng</th></tr></thead>
                 <tbody>{s.lots.slice(0, 10).map(l => (
                   <tr key={l.id}><td className="item-name">{l.item.name}</td><td className="mono">{l.lot_no || '—'}</td>

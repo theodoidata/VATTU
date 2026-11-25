@@ -4,5 +4,7 @@ export const handoff: {
   /** bấm thông báo → mở thẳng phiếu */
   openTransferId?: number;
   openStocktakeId?: number;
+  /** nút nổi "+ Điều chuyển" trên điện thoại → mở ngay phiếu xin hàng */
+  openCreate?: boolean;
   transferDraft?: { from_branch_id?: number; items: { item_id: number; qty: number }[] };
 } = {};

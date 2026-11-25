@@ -121,7 +121,7 @@ export default function StockPage() {
             <span className="muted small">{rows.length} vật tư</span>
           </div>
           {loading ? <Loading /> : error ? <div className="notice danger">{error}</div> : rows.length === 0 ? <Empty>{showAll ? 'Không có vật tư phù hợp.' : 'Không có vật tư phù hợp. Vật tư chưa có tồn đang được ẩn, tick “Hiện cả vật tư không có tồn” để xem.'}</Empty> : (
-            <><div className="table-wrap"><table className="data fixed-cols">
+            <><div className="table-wrap cards-sm"><table className="data fixed-cols">
               <thead><tr><th style={{ width: 84 }}>Mã</th><th>Tên vật tư</th><th className="hide-sm" style={{ width: 130 }}>Nhóm</th><th className="num" style={{ width: 100 }}>Tồn</th><th className="num" style={{ width: 104 }}>Còn dùng được</th><th className="num" style={{ width: 96 }}>Tối thiểu</th><th style={{ width: 104 }}>Trạng thái</th><th style={{ width: 112 }}>Hạn gần nhất</th></tr></thead>
               <tbody>{pg.shown.map(r => (
                 <tr key={r.id} className="clickable" onClick={() => setDetail(r)}>
@@ -212,7 +212,7 @@ function ItemDetail({ row, onClose }: { row: StockRow; onClose: () => void }) {
 
       {row.lots.length > 0 && <>
         <h3 className="sec">Lô tại {here?.name}</h3>
-        <div className="table-wrap"><table className="data">
+        <div className="table-wrap cards-sm"><table className="data">
           <thead><tr><th>Số lô</th><th>Hạn dùng</th><th className="num">Số lượng</th><th>Tình trạng</th></tr></thead>
           <tbody>{row.lots.map(l => <tr key={l.id}><td className="mono">{l.lot_no || '(không số lô)'}</td><td>{fmtDate(l.expiry_date)}</td><td className="num">{F(l.qty)}</td><td><ExpiryBadge date={l.expiry_date} /></td></tr>)}</tbody>
         </table></div>
@@ -220,7 +220,7 @@ function ItemDetail({ row, onClose }: { row: StockRow; onClose: () => void }) {
 
       <h3 className="sec">Tồn ở các chi nhánh</h3>
       {all.loading ? <Loading /> : all.error ? <div className="notice danger">{all.error}</div> : (
-        <div className="table-wrap"><table className="data">
+        <div className="table-wrap cards-sm"><table className="data">
           <thead><tr><th>Chi nhánh</th><th className="num">Tồn</th><th className="num">Còn dùng được</th><th className="num">Tối thiểu</th><th className="num" title="Còn dùng được trừ tối thiểu">Có thể cấp</th><th>Hạn gần nhất</th>{canRequest && <th />}</tr></thead>
           <tbody>{(all.data ?? []).map(b => {
             const isHere = b.branch_id === branchId;

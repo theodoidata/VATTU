@@ -43,7 +43,7 @@ function Users() {
       <div className="notice"><Info size={14} style={{ verticalAlign: -2 }} /> <b>Thêm nhân viên:</b> vào Supabase → <b>Authentication → Users → Add user</b> (nhập email + mật khẩu, tick “Auto Confirm User”). Tài khoản sẽ hiện ở đây với trạng thái <i>Chờ kích hoạt</i> — bấm “Sửa” để gán vị trí, chi nhánh và kích hoạt.</div>
       <div className="toolbar"><input className="input" placeholder="Tìm nhân viên…" value={q} onChange={e => setQ(e.target.value)} />{pending > 0 && <Badge tone="warning">{pending} tài khoản chờ kích hoạt</Badge>}</div>
       {users.loading ? <Loading /> : users.error ? <div className="notice danger">{users.error}</div> : !rows.length ? <Empty>Chưa có nhân viên.</Empty> : (
-        <><div className="table-wrap"><table className="data">
+        <><div className="table-wrap cards-sm"><table className="data">
           <thead><tr><th>Nhân viên</th><th>Bộ phận / Vị trí</th><th>Chi nhánh</th><th>Trạng thái</th><th>Quyền riêng</th><th /></tr></thead>
           <tbody>{pg.shown.map(u => (
             <tr key={u.id}>

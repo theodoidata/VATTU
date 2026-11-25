@@ -71,6 +71,47 @@ export function Switch({ checked, onChange, disabled }: { checked: boolean; onCh
 export function Empty({ children }: { children: ReactNode }) { return <div className="empty">{children}</div>; }
 export function Loading() { return <div className="empty"><Loader2 className="spin" size={18} /> Đang tải…</div>; }
 
+/** Màn hình điện thoại (≤ 760px) */
+export function useIsMobile() {
+  const q = '(max-width: 760px)';
+  const [m, setM] = useState(() => typeof window !== 'undefined' && window.matchMedia(q).matches);
+  useEffect(() => {
+    const mq = window.matchMedia(q);
+    const h = () => setM(mq.matches);
+    mq.addEventListener('change', h);
+    return () => mq.removeEventListener('change', h);
+  }, []);
+  return m;
+}
+
+/** Điện thoại: gắn nhãn cột (lấy từ tiêu đề bảng) cho từng ô của bảng có class "cards-sm" để hiện dạng thẻ */
+export function useCardLabels(enabled: boolean) {
+  useEffect(() => {
+    if (!enabled) return;
+    const label = () => {
+      document.querySelectorAll<HTMLTableElement>('.cards-sm table').forEach(t => {
+        const heads = [...t.querySelectorAll('thead th')].map(th => (th.textContent ?? '').trim());
+        // Ô làm tiêu đề thẻ: cột tên vật tư / mã phiếu nếu có, không thì cột đầu
+        const ti = Math.max(0, heads.findIndex(h => /^(tên vật tư|vật tư|vật tư cần|vật tư gửi đi|mã phiếu|họ tên|nhân viên)/i.test(h)));
+        t.querySelectorAll('tbody tr').forEach(tr => {
+          let i = 0;
+          tr.querySelectorAll<HTMLTableCellElement>(':scope > td').forEach(td => {
+            const h = heads[i] ?? '';
+            if (i === ti) td.classList.add('card-title');
+            else if (h && td.dataset.label !== h) td.dataset.label = h;
+            i += td.colSpan || 1;
+          });
+        });
+      });
+    };
+    label();
+    let raf = 0;
+    const obs = new MutationObserver(() => { cancelAnimationFrame(raf); raf = requestAnimationFrame(label); });
+    obs.observe(document.body, { childList: true, subtree: true });
+    return () => { obs.disconnect(); cancelAnimationFrame(raf); };
+  }, [enabled]);
+}
+
 /* Danh mục vật tư (811 dòng) ít khi đổi → nhớ trong phiên để khỏi tải lại mỗi lần mở trang (đỡ tốn dữ liệu).
    Chỉ xóa bộ nhớ khi có thao tác sửa danh mục / mức tối thiểu, hoặc khi đổi người dùng. */
 const CACHED_FNS = new Set(['list_items']);

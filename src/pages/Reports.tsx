@@ -98,7 +98,7 @@ function OwnStock() {
     <>
       <div className="toolbar"><span className="muted small">Tồn kho chi nhánh {name}</span><span className="spacer" /><ExportBtn onClick={doExport} disabled={!s.data?.length} /></div>
       {s.loading ? <Loading /> : s.error ? <div className="notice danger">{s.error}</div> : (
-        <><div className="table-wrap"><table className="data fixed-cols">
+        <><div className="table-wrap cards-sm"><table className="data fixed-cols">
           <thead><tr><th>Vật tư</th><th className="num" style={{ width: 110 }}>Tồn</th><th className="num" style={{ width: 130 }}>Còn dùng được</th><th className="num" style={{ width: 100 }}>Tối thiểu</th><th style={{ width: 130 }}>Trạng thái</th></tr></thead>
           <tbody>{pgO.shown.map(r => <tr key={r.id}><td><span className="item-name">{r.name}</span> <span className="item-code">{r.code}</span></td><td className="num">{fmtUnits(r.qty, r)}</td><td className="num">{fmtUnits(r.usable_qty, r, { bare: true })}</td><td className="num">{fmtUnits(r.min_qty, r, { bare: true })}</td><td><StockBadge usable={r.usable_qty} min={r.min_qty} /></td></tr>)}</tbody>
         </table></div>{pgO.pager}</>
@@ -148,7 +148,7 @@ function TransferReport() {
         <span className="spacer" /><ExportBtn onClick={doExport} disabled={!flat.length} />
       </div>
       {t.loading ? <Loading /> : t.error ? <div className="notice danger">{t.error}</div> : !flat.length ? <Empty>Không có điều chuyển trong khoảng thời gian này.</Empty> : (
-        <><div className="table-wrap"><table className="data">
+        <><div className="table-wrap cards-sm"><table className="data">
           <thead><tr><th>Phiếu</th><th>A ← B</th><th>Vật tư</th><th className="num">Yêu cầu</th><th className="num">Duyệt</th><th>Trạng thái</th><th>Hoàn tất</th></tr></thead>
           <tbody>{pgT.shown.map(({ t: x, l }) => (
             <tr key={l.id}><td className="nowrap"><b className="mono">{x.code}</b><div className="item-code">{fmtDateTime(x.requested_at)}</div></td>
@@ -210,7 +210,7 @@ function UsageReport() {
         <span className="spacer" /><ExportBtn onClick={doExport} disabled={!data.length} />
       </div>
       {u.loading ? <Loading /> : u.error ? <div className="notice danger">{u.error}</div> : !data.length ? <Empty>Không có dữ liệu xuất dùng.</Empty> : view === 'sum' ? (
-        <><div className="table-wrap"><table className="data">
+        <><div className="table-wrap cards-sm"><table className="data">
           <thead><tr><th>Vật tư</th>{shownBranches.map(b => <th key={b.id} className="num">{b.name}</th>)}<th className="num">Tổng</th><th className="num">TB/ngày</th><th className="num">Hỏng/hủy</th></tr></thead>
           <tbody>{pgS.shown.map(x => (
             <tr key={x.item_id}><td><span className="item-name">{x.item_name}</span> <span className="item-code">{x.unit}</span></td>
@@ -219,7 +219,7 @@ function UsageReport() {
           ))}</tbody>
         </table></div>{pgS.pager}</>
       ) : (
-        <><div className="table-wrap"><table className="data">
+        <><div className="table-wrap cards-sm"><table className="data">
           <thead><tr><th>Ngày</th><th>Chi nhánh</th><th>Vật tư</th><th className="num">SL</th><th>Lý do</th><th>Lô</th><th>Người ghi</th></tr></thead>
           <tbody>{pgD.shown.map((x, i) => (
             <tr key={i}><td className="nowrap">{fmtDate(x.usage_date)}</td><td>{x.branch_name}</td><td><span className="item-name">{x.item_name}</span></td>

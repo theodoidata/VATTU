@@ -1,11 +1,11 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import {
   LayoutDashboard, Boxes, PackageMinus, PackagePlus, ArrowRightLeft, ClipboardCheck, BarChart3,
-  BookOpen, ShieldCheck, LogOut, Loader2, CircleHelp, CircleUserRound,
+  BookOpen, ShieldCheck, LogOut, Loader2, CircleHelp, CircleUserRound, Plus, LayoutGrid,
 } from 'lucide-react';
 import { DEMO_USERS, demoBackend, preloadDemo, supabase, supabaseBackend, supabaseConfigured, type Backend } from './lib/backend';
 import { Ctx, type AppCtx } from './lib/app-context';
-import { clearRpcCache } from './components/ui';
+import { clearRpcCache, useCardLabels, useIsMobile } from './components/ui';
 import { handoff } from './lib/handoff';
 import { GuideModal, ProfileModal, RoleGuideModal } from './pages/Account';
 import { NotiBell, type Noti } from './components/Notifications';
@@ -20,7 +20,7 @@ import ReportsPage from './pages/Reports';
 import CatalogPage from './pages/Catalog';
 import AdminPage from './pages/Admin';
 
-type PageDef = { key: string; label: string; icon: typeof Boxes; perms: string[]; el: () => ReactNode };
+type PageDef = { key: string; label: string; icon: typeof Boxes; perms: string[]; el: () => ReactNode; short?: string };
 const PAGES: PageDef[] = [
   { key: 'tong-quan',   label: 'Tổng quan',   icon: LayoutDashboard, perms: ['inv_stock_view'], el: () => <Dashboard /> },
   { key: 'ton-kho',     label: 'Tồn kho',     icon: Boxes,           perms: ['inv_stock_view'], el: () => <StockPage /> },
@@ -30,7 +30,7 @@ const PAGES: PageDef[] = [
   { key: 'kiem-ke',     label: 'Kiểm kê',     icon: ClipboardCheck,  perms: ['inv_stocktake_count', 'inv_stocktake_approve'], el: () => <StocktakePage /> },
   { key: 'bao-cao',     label: 'Báo cáo',     icon: BarChart3,       perms: ['inv_report_view'], el: () => <ReportsPage /> },
   { key: 'danh-muc',    label: 'Danh mục',    icon: BookOpen,        perms: ['inv_catalog_manage', 'inv_min_manage'], el: () => <CatalogPage /> },
-  { key: 'quan-tri',    label: 'Nhân sự & Phân quyền', icon: ShieldCheck, perms: ['admin_users', 'admin_permissions'], el: () => <AdminPage /> },
+  { key: 'quan-tri',    label: 'Nhân sự & Phân quyền', short: 'Nhân sự', icon: ShieldCheck, perms: ['admin_users', 'admin_permissions'], el: () => <AdminPage /> },
 ];
 
 const store = {
@@ -133,7 +133,9 @@ function Shell({ backend, onSignOut, demo }: { backend: Backend; onSignOut: () =
   const [inbox, setInbox] = useState(0);
   const [notis, setNotis] = useState<Noti[]>([]);
   const [navKey, setNavKey] = useState(0);
-  const [dialog, setDialog] = useState<'profile' | 'guide' | 'rules' | null>(null);
+  const [dialog, setDialog] = useState<'profile' | 'guide' | 'rules' | 'more' | null>(null);
+  const isMobile = useIsMobile();
+  useCardLabels(isMobile);
 
   const [transferTick, setTransferTick] = useState(0);
 
@@ -246,7 +248,15 @@ function Shell({ backend, onSignOut, demo }: { backend: Backend; onSignOut: () =
   }
 
   const visible = PAGES.filter(p => p.perms.some(ctx.has));
-  const current = visible.find(p => p.key === page) ?? visible[0];
+  // Điện thoại: 5 tab dưới đáy theo vị trí. Chỉ BGĐ có tab Tổng quan; nhiều hơn 5 mục thì tab cuối là "Thêm".
+  const isBGD = /bgđ|bgd|giám đốc/i.test(session.profile?.department_name ?? '');
+  const ORDER = isBGD ? ['tong-quan', 'ton-kho', 'dieu-chuyen', 'bao-cao', 'xuat-dung', 'nhap-kho', 'kiem-ke', 'danh-muc', 'quan-tri']
+    : ['ton-kho', 'xuat-dung', 'dieu-chuyen', 'kiem-ke', 'nhap-kho', 'bao-cao', 'danh-muc', 'quan-tri'];
+  const mobilePages = ORDER.map(k => visible.find(p => p.key === k)).filter((p): p is PageDef => Boolean(p));
+  const tabPages = mobilePages.length <= 5 ? mobilePages : mobilePages.slice(0, 4);
+  const morePages = mobilePages.length <= 5 ? [] : mobilePages.slice(4);
+  const current = (isMobile && !isBGD && page === 'tong-quan' ? mobilePages[0] : visible.find(p => p.key === page)) ?? (isMobile ? mobilePages[0] : visible[0]);
+  const canFab = isMobile && ctx.has('inv_transfer_request') && ctx.canAct(branchId);
   const me = session.profile;
 
   return (
@@ -277,9 +287,31 @@ function Shell({ backend, onSignOut, demo }: { backend: Backend; onSignOut: () =
         </div>
       </header>
       {demoBar}
-      <main className={`main ${demo ? 'with-demo' : ''}`}>
+      <main className={`main ${demo ? 'with-demo' : ''}${isMobile ? ' has-tabbar' : ''}${canFab ? ' has-fab' : ''}`}>
         {current ? <Fragment key={navKey}>{current.el()}</Fragment> : <div className="notice warning">Tài khoản của bạn chưa được bật quyền nào. Liên hệ BGĐ.</div>}
       </main>
+      {isMobile && <>
+        {canFab && <button className="fab" onClick={() => { handoff.openCreate = true; ctx.go('dieu-chuyen'); setNavKey(k => k + 1); }}>
+          <Plus size={18} /> Điều chuyển</button>}
+        <nav className="tabbar" style={{ gridTemplateColumns: `repeat(${tabPages.length + (morePages.length ? 1 : 0)}, 1fr)` }}>
+          {tabPages.map(p => (
+            <button key={p.key} className={current?.key === p.key ? 'active' : ''} onClick={() => ctx.go(p.key)}>
+              <span className="tb-ico"><p.icon size={20} />{p.key === 'dieu-chuyen' && inbox > 0 && <em>{inbox}</em>}</span>
+              <span>{p.short ?? p.label}</span>
+            </button>))}
+          {morePages.length > 0 && <button className={morePages.some(p => p.key === current?.key) ? 'active' : ''} onClick={() => setDialog('more')}>
+            <span className="tb-ico"><LayoutGrid size={20} /></span><span>Thêm</span></button>}
+        </nav>
+        {dialog === 'more' && <div className="sheet-backdrop" onClick={() => setDialog(null)}>
+          <div className="sheet" onClick={e => e.stopPropagation()}>
+            <div className="sheet-handle" />
+            <b className="sheet-title">Chức năng khác</b>
+            <div className="sheet-grid">{morePages.map(p => (
+              <button key={p.key} className={current?.key === p.key ? 'active' : ''} onClick={() => { setDialog(null); ctx.go(p.key); }}>
+                <p.icon size={22} /><span>{p.short ?? p.label}</span></button>))}</div>
+          </div>
+        </div>}
+      </>}
       {dialog === 'profile' && <ProfileModal me={me} pages={visible.map(p => p.label)} demo={Boolean(demo)} onClose={() => setDialog(null)} />}
       {dialog === 'rules' && <RoleGuideModal me={me} onClose={() => setDialog(null)} onDetail={() => setDialog('guide')} />}
       {dialog === 'guide' && <GuideModal pages={['Tổng quan', ...visible.map(p => p.label)]} onClose={() => setDialog(null)} />}

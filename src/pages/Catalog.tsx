@@ -59,7 +59,7 @@ export default function CatalogPage() {
           <span className="muted small">{rows.length} vật tư</span>
         </div>
         {list.loading ? <Loading /> : list.error ? <div className="notice danger">{list.error}</div> : !rows.length ? <Empty>Chưa có vật tư.</Empty> : (
-          <><div className="table-wrap"><table className="data fixed-cols">
+          <><div className="table-wrap cards-sm"><table className="data fixed-cols">
             <thead><tr><th style={{ width: 84 }}>Mã</th><th>Tên vật tư</th><th style={{ width: 120 }}>Nhóm</th><th style={{ width: 64 }}>ĐV dùng</th><th style={{ width: 96 }}>ĐV nhập</th><th style={{ width: 80 }}>Lô / HSD</th><th className="num" style={{ width: 96 }}>Tối thiểu mặc định</th><th style={{ width: 90 }}>Riêng chi nhánh</th></tr></thead>
             <tbody>{pg.shown.map(i => (
               <tr key={i.id} className="clickable" onClick={() => setEditing(i)} style={i.active ? undefined : { opacity: .5 }}>

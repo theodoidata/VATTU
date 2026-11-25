@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Plus, Trash2, Send, Check, X, PackageCheck, Truck, Lightbulb, Download } from 'lucide-react';
+import { Plus, Trash2, Send, Check, X, PackageCheck, Truck, Lightbulb, Download, ChevronLeft, ChevronRight } from 'lucide-react';
 import { useApp, type AppCtx } from '../lib/app-context';
-import { Badge, Empty, Field, ItemPicker, ItemQtyInput, Loading, UnitCell, Modal, PageHeader, ReasonModal, useAction, useRpc, usePaged, useUnits } from '../components/ui';
+import { Badge, Empty, Field, ItemPicker, ItemQtyInput, Loading, UnitCell, useIsMobile, Modal, PageHeader, ReasonModal, useAction, useRpc, usePaged, useUnits } from '../components/ui';
 import { TRANSFER_STATUS, fmtDate, fmtDateTime, fmtQty, fmtUnits } from '../lib/format';
 import type { Item, MatrixRow, StockRow, Transfer, TransferLine } from '../lib/types';
 import { handoff } from '../lib/handoff';
@@ -25,7 +25,7 @@ export default function TransfersPage() {
   const branch = branches.find(b => b.id === branchId);
   const list = useRpc<Transfer[]>('list_transfers', { limit: 300 });
   const [tab, setTab] = useState<Tab>('todo');
-  const [creating, setCreating] = useState(() => Boolean(handoff.transferDraft));
+  const [creating, setCreating] = useState(() => { const c = Boolean(handoff.transferDraft || handoff.openCreate); handoff.openCreate = undefined; return c; });
   const [openId, setOpenId] = useState<number | null>(() => { const id = handoff.openTransferId ?? null; handoff.openTransferId = undefined; return id; });
   const [pushing, setPushing] = useState(false);
 
@@ -48,7 +48,7 @@ export default function TransfersPage() {
         description={<>Quy trình: <b>chi nhánh thiếu (A)</b> tạo yêu cầu → <b>chi nhánh cấp (B)</b> duyệt → B xác nhận <b>đã gửi</b> (trừ kho B) → A xác nhận <b>đã nhận</b> (cộng kho A). B cũng có thể <b>cấp hàng chủ động</b> không cần A xin.</>}
         actions={<>
           {has('inv_transfer_ship') && canAct(branchId) && <button className="btn" onClick={() => setPushing(true)}><Truck size={16} /> {branch?.name} cấp hàng đi</button>}
-          {has('inv_transfer_request') && canAct(branchId) && <button className="btn btn-primary" onClick={() => setCreating(true)}><Plus size={16} /> Tạo yêu cầu cho {branch?.name}</button>}
+          {has('inv_transfer_request') && canAct(branchId) && <button className="btn btn-primary hide-mobile" onClick={() => setCreating(true)}><Plus size={16} /> Tạo yêu cầu cho {branch?.name}</button>}
         </>} />
       <section className="panel">
         <div className="tabs">
@@ -58,7 +58,7 @@ export default function TransfersPage() {
           ))}
         </div>
         {tab === 'buy' ? <BuyList branchId={branchId} branchName={branch?.name ?? ''} onOpen={setOpenId} /> : list.loading ? <Loading /> : list.error ? <div className="notice danger">{list.error}</div> : rows.length === 0 ? <Empty>Không có phiếu điều chuyển.</Empty> : (
-          <><div className="table-wrap"><table className="data">
+          <><div className="table-wrap cards-sm"><table className="data">
             <thead><tr><th>Mã phiếu</th><th>Chi nhánh xin (A)</th><th>Chi nhánh cấp (B)</th><th>Vật tư</th><th>Trạng thái</th><th>Ngày tạo</th><th>Người tạo</th></tr></thead>
             <tbody>{pg.shown.map(t => (
               <tr key={t.id} className="clickable" onClick={() => setOpenId(t.id)}>
@@ -121,7 +121,7 @@ function BuyList({ branchId, branchName, onOpen }: { branchId: number; branchNam
     </div>
     {open.loading ? <Loading /> : open.error ? <div className="notice danger">{open.error}</div> : !shown.length
       ? <Empty>{rows.length ? `${branchName} đủ hàng cho tất cả phiếu đang chờ.` : `Không có phiếu nào đang xin hàng từ ${branchName}.`}</Empty> : (
-      <><div className="table-wrap"><table className="data fixed-cols">
+      <><div className="table-wrap cards-sm"><table className="data fixed-cols">
         <thead><tr><th>Vật tư</th><th style={{ width: '30%' }}>Các chi nhánh xin</th><th className="num" style={{ width: 110 }}>Tổng xin</th>
           <th className="num" style={{ width: 120 }}>{branchName} còn</th><th className="num" style={{ width: 120 }}>Cần mua</th><th style={{ width: 150 }}>Phiếu</th></tr></thead>
         <tbody>{pg.shown.map(r => (
@@ -154,6 +154,8 @@ function CreateModal({ onClose, onCreated }: { onClose: () => void; onCreated: (
     : [{ key: seq++, item_id: null, qty: '', src: null, manual: false }]);
   const [note, setNote] = useState('');
   const { run, busy } = useAction();
+  const isMobile = useIsMobile();
+  const [step, setStep] = useState(1);
   const others = branches.filter(b => b.id !== branchId);
   const mx = useMemo(() => new Map((matrix.data ?? []).map(r => [r.id, r])), [matrix.data]);
   // Ô không có trong ma trận = chi nhánh đó tồn 0 (máy chủ bỏ ô trống để đỡ tốn dữ liệu)
@@ -198,6 +200,80 @@ function CreateModal({ onClose, onCreated }: { onClose: () => void; onCreated: (
     if (ok === bySrc.length) onCreated(bySrc.length === 1 ? lastId : null);
   }
   const activeItems = (items.data ?? []).filter(i => i.active);
+
+  // ---------- Điện thoại: chia thành 3 bước ----------
+  if (isMobile) {
+    const addLine = () => setLines(ls => [...ls, { key: seq++, item_id: null, qty: '', src: null, manual: false }]);
+    const srcOptions = (l: Line) => others.map(b => ({ b, u: Number(cell(l.item_id, b.id).usable) }))
+      .sort((x, y) => y.u - x.u);
+    const title = ['', 'Chọn vật tư cần xin', 'Xin từ chi nhánh nào', 'Xác nhận gửi'][step];
+    return (
+      <Modal title={<span className="guide-title"><small>XIN HÀNG VỀ {nameOf(branchId).toUpperCase()} · BƯỚC {step}/3</small>{title}</span>} onClose={onClose} footer={<>
+        {step > 1 ? <button className="btn" onClick={() => setStep(step - 1)}><ChevronLeft size={16} /> Quay lại</button> : <button className="btn" onClick={onClose}>Đóng</button>}
+        <span className="spacer" />
+        {step === 1 && <button className="btn btn-primary" disabled={!valid.length} onClick={() => setStep(2)}>Tiếp ({valid.length} vật tư) <ChevronRight size={16} /></button>}
+        {step === 2 && <button className="btn btn-primary" disabled={noSrc.length > 0} onClick={() => setStep(3)}>Tiếp <ChevronRight size={16} /></button>}
+        {step === 3 && <button className="btn btn-primary" disabled={busy || !valid.length || noSrc.length > 0} onClick={submit}><Send size={16} /> Gửi {bySrc.length > 1 ? `${bySrc.length} phiếu` : 'yêu cầu'}</button>}
+      </>}>
+        <div className="wiz-steps">{[1, 2, 3].map(i => <span key={i} className={i <= step ? 'on' : ''} />)}</div>
+
+        {step === 1 && <>
+          {lines.map((l, idx) => {
+            const it = l.item_id ? items.data?.find(i => i.id === l.item_id) : undefined;
+            return (
+              <div key={l.key} className="wiz-card">
+                <div className="wiz-card-head">
+                  <div><ItemPicker items={activeItems} value={l.item_id} placeholder={`Tìm vật tư ${idx + 1}…`}
+                    onChange={id => set(l.key, { item_id: id, manual: false })} exclude={lines.filter(x => x.key !== l.key).map(x => x.item_id!).filter(Boolean)} /></div>
+                  <button className="btn btn-ghost btn-sm icon-only" aria-label="Xóa dòng"
+                    onClick={() => setLines(ls => ls.length > 1 ? ls.filter(x => x.key !== l.key) : [{ key: seq++, item_id: null, qty: '', src: null, manual: false }])}><Trash2 size={15} /></button>
+                </div>
+                {l.item_id && <div className="wiz-row"><span className="small muted">Số lượng</span>
+                  <ItemQtyInput itemId={l.item_id} unit={it?.unit} value={l.qty} onChange={v => set(l.key, { qty: v })} showUnit /></div>}
+              </div>
+            );
+          })}
+          <button className="btn btn-sm" onClick={addLine}><Plus size={14} /> Thêm vật tư</button>
+        </>}
+
+        {step === 2 && valid.map(l => {
+          const it = items.data?.find(i => i.id === l.item_id);
+          return (
+            <div key={l.key} className="wiz-card">
+              <div><b>{it?.name}</b> <span className="small muted">· cần {U(l.qty, l.item_id, it?.unit)}</span></div>
+              {canViewAll ? (
+                <div className="wiz-src">{srcOptions(l).map(({ b, u }) => (
+                  <button key={b.id} className={l.src === b.id ? 'on' : ''} onClick={() => set(l.key, { src: b.id, manual: true })}>
+                    <span>{l.src === b.id ? '● ' : '○ '}{b.name}</span>
+                    <span className={u >= Number(l.qty) ? 'text-success' : u > 0 ? '' : 'muted'}>{u > 0 ? `còn ${U(u, l.item_id, it?.unit)}` : 'hết hàng'}</span>
+                  </button>))}
+                </div>
+              ) : (
+                <select className="select" value={l.src ?? ''} onChange={e => set(l.key, { src: e.target.value ? Number(e.target.value) : null, manual: true })}>
+                  <option value="">— Chọn chi nhánh cấp —</option>{others.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
+                </select>
+              )}
+            </div>
+          );
+        })}
+
+        {step === 3 && <>
+          {bySrc.map(([src, ls], i) => (
+            <div key={src} className="wiz-sum">
+              <b>Phiếu {i + 1} · xin từ {nameOf(src)}</b>
+              <ul>{ls.map(l => {
+                const it = items.data?.find(x => x.id === l.item_id);
+                const lack = canViewAll && Number(cell(l.item_id, src).usable) < Number(l.qty);
+                return <li key={l.key}>{it?.name}: <b>{U(l.qty, l.item_id, it?.unit)}</b>{lack && <span className="text-warning"> · chờ hàng về</span>}</li>;
+              })}</ul>
+            </div>))}
+          {short.length > 0 && <p className="small text-warning" style={{ marginTop: 0 }}>Có {short.length} vật tư chi nhánh cấp chưa đủ hàng — phiếu vẫn gửi được, sẽ chờ hàng về.</p>}
+          <Field label="Ghi chú / lý do"><textarea className="input" value={note} onChange={e => setNote(e.target.value)} placeholder="VD: cần gấp cho ca implant thứ 7" /></Field>
+        </>}
+      </Modal>
+    );
+  }
+
   return (
     <Modal size="xwide" title={`Yêu cầu điều chuyển về ${nameOf(branchId)}`} onClose={onClose} footer={<>
       <div className="foot-summary small">
@@ -292,7 +368,7 @@ function PushModal({ onClose, onCreated }: { onClose: () => void; onCreated: (id
         <Field label="Ghi chú"><input className="input" value={note} onChange={e => setNote(e.target.value)} placeholder="VD: bổ sung định kỳ tháng 11" /></Field>
       </div>
       {stock.loading ? <Loading /> : (
-        <div className="table-wrap"><table className="data lines-table">
+        <div className="table-wrap cards-sm"><table className="data lines-table">
           <thead><tr><th style={{ minWidth: 260 }}>Vật tư gửi đi</th><th className="num" style={{ width: 150 }}>Số lượng</th><th style={{ width: 100 }}>Đơn vị</th><th className="num" style={{ width: 140 }}>Còn dùng được</th><th style={{ width: 40 }} /></tr></thead>
           <tbody>{lines.map(l => {
             const r = l.item_id ? byId.get(l.item_id) : undefined;
@@ -333,7 +409,7 @@ function ReceiveModal({ t, busy, onClose, onConfirm }: { t: Transfer; busy: bool
       </button>
     </>}>
       <p className="small muted" style={{ marginTop: 0 }}>Kiểm đếm hàng thực tế. Đủ thì giữ nguyên số; thiếu thì sửa <b>Thực nhận</b>. Kho {t.to_branch_name} chỉ được cộng đúng số thực nhận, phần thiếu được ghi lại để BGĐ xử lý.</p>
-      <div className="table-wrap"><table className="data">
+      <div className="table-wrap cards-sm"><table className="data">
         <thead><tr><th>Vật tư</th><th className="num" style={{ width: 120 }}>Đã gửi</th><th className="num" style={{ width: 150 }}>Thực nhận</th><th style={{ width: 100 }}>Đơn vị</th><th className="num" style={{ width: 100 }}>Thiếu</th></tr></thead>
         <tbody>{rows.map(({ l, s, bad, short }) => (
           <tr key={l.id}>
@@ -405,7 +481,7 @@ function DetailModal({ t, onClose }: { t: Transfer; onClose: () => void }) {
       ))}</div>
       {bad && <div className="notice danger">{s === 'rejected' ? 'Bị từ chối' : 'Đã hủy'} bởi {t.closed_by_name} lúc {fmtDateTime(t.closed_at)}{t.reject_reason ? `: ${t.reject_reason}` : ''}</div>}
       {t.receive_note && <div className={`notice${t.has_shortage ? ' danger' : ''}`}>Ghi chú khi nhận: {t.receive_note}</div>}
-      <div className="table-wrap"><table className="data">
+      <div className="table-wrap cards-sm"><table className="data">
         <thead><tr><th>Vật tư</th><th className="num">{t.kind === 'push' ? 'Cấp' : 'Yêu cầu'}</th><th className="num">Duyệt cấp</th><th>Lô đã gửi</th>{s === 'received' && <th className="num">Thực nhận</th>}</tr></thead>
         <tbody>{t.lines.map(l => (
           <tr key={l.id}>
