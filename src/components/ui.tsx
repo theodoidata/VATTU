@@ -184,7 +184,7 @@ export function ItemPicker({ items, value, onChange, placeholder = 'Tìm vật t
   const list = useMemo(() => {
     const n = norm(q.trim());
     return items.filter(i => !exclude.includes(i.id) || i.id === value)
-      .filter(i => !n || norm(i.name).includes(n) || norm(i.code).includes(n)).slice(0, 80);
+      .filter(i => !n || norm(i.name).includes(n) || norm(i.code).includes(n) || norm(i.group_name ?? '').includes(n)).slice(0, 80);
   }, [items, q, exclude, value]);
   useEffect(() => {
     const h = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false); };
@@ -194,8 +194,10 @@ export function ItemPicker({ items, value, onChange, placeholder = 'Tìm vật t
   const pick = (id: number) => { onChange(id); setOpen(false); setQ(''); };
   // Danh sách gợi ý dùng vị trí cố định theo màn hình → không bị bảng / popup có thanh cuộn che mất
   const [pos, setPos] = useState<{ left: number; top?: number; bottom?: number; width: number; maxH: number } | null>(null);
+  // Điện thoại: danh sách gợi ý nằm ngay dưới ô tìm (không dùng vị trí cố định — bàn phím ảo làm lệch vị trí)
+  const isMobile = useIsMobile();
   useEffect(() => {
-    if (!open) return;
+    if (!open || isMobile) return;
     const place = () => {
       const r = ref.current?.getBoundingClientRect(); if (!r) return;
       const below = window.innerHeight - r.bottom - 8, above = r.top - 8;
@@ -208,14 +210,14 @@ export function ItemPicker({ items, value, onChange, placeholder = 'Tìm vật t
     place();
     window.addEventListener('scroll', place, true); window.addEventListener('resize', place);
     return () => { window.removeEventListener('scroll', place, true); window.removeEventListener('resize', place); };
-  }, [open]);
+  }, [open, isMobile]);
   let lastGroup: string | null | undefined;
   return (
     <div className="combo" ref={ref}>
       <input className="input sm" style={{ width: '100%' }}
         value={open ? q : selected ? `${selected.name}` : ''}
         placeholder={selected ? selected.name : placeholder}
-        onFocus={() => { setOpen(true); setHl(0); }}
+        onFocus={e => { setOpen(true); setHl(0); if (isMobile) { const el = e.currentTarget; window.setTimeout(() => el.scrollIntoView({ block: 'start', behavior: 'smooth' }), 300); } }}
         onChange={e => { setQ(e.target.value); setOpen(true); setHl(0); }}
         onKeyDown={e => {
           if (e.key === 'ArrowDown') { e.preventDefault(); setHl(h => Math.min(h + 1, list.length - 1)); }
@@ -223,8 +225,9 @@ export function ItemPicker({ items, value, onChange, placeholder = 'Tìm vật t
           else if (e.key === 'Enter' && list[hl]) { e.preventDefault(); pick(list[hl].id); }
           else if (e.key === 'Escape') setOpen(false);
         }} />
-      {open && pos && (
-        <div className="combo-list" style={{ position: 'fixed', left: pos.left, top: pos.top, bottom: pos.bottom, right: 'auto', width: pos.width, maxHeight: pos.maxH, zIndex: 400 }}>
+      {open && (isMobile || pos) && (
+        <div className="combo-list" style={isMobile ? { position: 'static', width: '100%', minWidth: 0, maxHeight: 260, marginTop: 4 }
+          : { position: 'fixed', left: pos!.left, top: pos!.top, bottom: pos!.bottom, right: 'auto', width: pos!.width, maxHeight: pos!.maxH, zIndex: 400 }}>
           {list.length === 0 && <div className="empty small">Không tìm thấy vật tư</div>}
           {list.map((i, idx) => {
             const head = i.group_name !== lastGroup ? <div className="grp">{i.group_name ?? 'Khác'}</div> : null;

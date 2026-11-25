@@ -28,6 +28,7 @@
 }
 * { box-sizing: border-box; }
 html, body { margin: 0; padding: 0; }
+html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
 body { font-family: var(--td-font); font-size: 14px; line-height: 20px; color: var(--td-text); background: var(--td-bg); }
 button, input, select, textarea { font: inherit; color: inherit; }
 button { cursor: pointer; }
@@ -321,8 +322,17 @@ table.data tfoot td { font-weight: 700; background: #f7f9fb; }
   .kpi-card { grid-template-columns: 1fr; padding: 10px; }
   .kpi-icon { display: none; }
   .steps { grid-template-columns: 1fr 1fr; }
-  .modal-backdrop { padding: 0; place-items: end stretch; }
-  .modal, .modal.wide, .modal.narrow { width: 100%; max-height: 92vh; border-radius: 16px 16px 0 0; }
+  /* Popup nằm giữa màn hình (bàn phím hiện lên không đẩy lệch) */
+  .modal-backdrop { padding: 12px; place-items: center; align-content: center; }
+  .modal, .modal.wide, .modal.narrow, .modal.xwide, .modal.medium { width: 100%; max-height: 82vh; max-height: 82dvh; border-radius: 16px; }
+  .modal-head { padding: 12px 14px; }
+  .modal-body { padding: 12px 14px; }
+  .modal-foot { padding: 10px 14px; flex-wrap: nowrap; }
+  .modal-foot .btn { white-space: nowrap; }
+  .guide-title { font-size: 17px; }
+  /* iPhone tự phóng to trang khi chữ trong ô nhập nhỏ hơn 16px → giữ 16px */
+  .input, .select, textarea, select, input { font-size: 16px !important; }
+  html, body { overflow-x: hidden; max-width: 100%; }
   .td-page-title { font-size: 18px; }
 }
 
