@@ -221,12 +221,16 @@ function ReceiptHistory({ docs, from, to, setFrom, setTo }: {
 }) {
   const { branchId, has } = useApp();
   const pg = usePaged(docs.data ?? [], [branchId, from, to]);
-  const [editing, setEditing] = useState<ReceiptDoc | null>(null);
-  const [deleting, setDeleting] = useState<ReceiptDoc | null>(null);
-  const { run, busy } = useAction();
+  // Mỗi phiếu 1 dòng; bấm vào mới tải chi tiết (đỡ tốn dữ liệu)
+  const [openId, setOpenId] = useState<number | null>(null);
+  const [mode, setMode] = useState<'view' | 'edit' | 'delete'>('view');
   const canEdit = has('inv_receipt_edit');
-  const U = useUnits();
   const isMobile = useIsMobile();
+  const open = (id: number, m: 'view' | 'edit' | 'delete') => { setOpenId(id); setMode(m); };
+  const items = (d: ReceiptDoc) => <>{d.preview}{Number(d.line_count) > 3 && <span className="muted"> … và {Number(d.line_count) - 3} vật tư khác</span>}</>;
+  const actions = (d: ReceiptDoc) => canEdit && <span className="row" style={{ gap: 4, flexWrap: 'nowrap' }} onClick={e => e.stopPropagation()}>
+    <button className="btn btn-sm" onClick={() => open(d.id, 'edit')}><Pencil size={13} /> Sửa</button>
+    <button className="btn btn-sm btn-danger" onClick={() => open(d.id, 'delete')} aria-label="Xóa phiếu"><Trash2 size={13} />{!isMobile && ' Xóa'}</button></span>;
   return (
     <section className="panel">
       <div className="panel-head"><h2>Lịch sử nhập kho</h2>
@@ -234,44 +238,74 @@ function ReceiptHistory({ docs, from, to, setFrom, setTo }: {
       </div>
       {docs.loading ? <Loading /> : docs.error ? <div className="notice danger">{docs.error}</div> : !docs.data?.length ? <Empty>Chưa có phiếu nhập.</Empty> : isMobile ? (
         <>{pg.shown.map(d => (
-          <div key={d.id} className="wiz-card">
-            <div className="wiz-card-head"><div><b>{fmtDate(d.receipt_date)}</b> <span className="item-code">#{d.id} · {d.source}</span>
-              {(d.supplier || d.note) && <div className="small muted">{[d.supplier, d.note].filter(Boolean).join(' · ')}</div>}
-              <div className="small muted">{d.created_by_name} · {fmtDateTime(d.created_at)}{d.updated_at ? ` · sửa bởi ${d.updated_by_name}` : ''}</div></div>
-              {canEdit && <span className="row" style={{ gap: 4, flexWrap: 'nowrap' }}><button className="btn btn-sm" onClick={() => setEditing(d)}><Pencil size={13} /> Sửa</button>
-                <button className="btn btn-sm btn-danger" onClick={() => setDeleting(d)} aria-label="Xóa phiếu"><Trash2 size={13} /></button></span>}</div>
-            <div style={{ display: 'grid', gap: 4 }}>{d.lines.map(ln => (
-              <div key={ln.id} className="row small" style={{ justifyContent: 'space-between', flexWrap: 'nowrap' }}>
-                <span style={{ minWidth: 0 }}>{ln.item_name}{ln.lot_no ? <span className="muted"> · lô {ln.lot_no}</span> : null}{ln.expiry_date ? <span className="muted"> · HSD {fmtDate(ln.expiry_date)}</span> : null}</span>
-                <b className="nowrap">{U(ln.qty, ln.item_id, ln.unit)}</b></div>))}</div>
+          <div key={d.id} className="wiz-card clickable" onClick={() => open(d.id, 'view')}>
+            <div className="wiz-card-head"><div><b>{fmtDate(d.receipt_date)}</b> <span className="item-code">#{d.id} · {d.line_count} vật tư</span>
+              <div className="small" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{items(d)}</div>
+              <div className="small muted">{d.created_by_name} · {fmtDateTime(d.created_at)}</div></div>
+              {actions(d)}</div>
           </div>))}{pg.pager}</>
       ) : (
         <><div className="table-wrap"><table className="data">
-          <thead><tr><th>Ngày</th><th>Nguồn</th><th>Vật tư</th><th className="num">SL nhập</th><th className="num">Quy ra</th><th>Lô</th><th>Hạn dùng</th><th>Người nhập</th></tr></thead>
-          <tbody>{pg.shown.flatMap(d => d.lines.map((ln, i) => (
-            <tr key={ln.id}>
-              {i === 0 && <td rowSpan={d.lines.length} className="nowrap">{fmtDate(d.receipt_date)}<div className="item-code">#{d.id}</div></td>}
-              {i === 0 && <td rowSpan={d.lines.length} className="small">{d.source}{d.supplier ? <div className="item-code">{d.supplier}</div> : null}{d.note ? <div className="item-code">{d.note}</div> : null}</td>}
-              <td><span className="item-name">{ln.item_name}</span> <span className="item-code">{ln.item_code}</span></td>
-              <td className="num" title={`Ghi trên phiếu: ${fmtQty(ln.input_qty)} ${ln.input_unit}`}>{U(ln.qty, ln.item_id, ln.unit)}</td>
-              <td className="num">{fmtQty(ln.qty)} {ln.unit}</td>
-              <td className="mono small">{ln.lot_no || '—'}</td><td className="small">{fmtDate(ln.expiry_date)}</td>
-              {i === 0 && <td rowSpan={d.lines.length} className="small">{d.created_by_name}<div className="item-code">{fmtDateTime(d.created_at)}</div>
-                {d.updated_at && <div className="item-code" style={{ color: 'var(--td-warning, #b45309)' }}>Sửa: {d.updated_by_name} · {fmtDateTime(d.updated_at)}</div>}
-                {canEdit && <div className="row" style={{ gap: 4, marginTop: 4, flexWrap: 'nowrap' }}><button className="btn btn-sm" onClick={() => setEditing(d)}><Pencil size={13} /> Sửa</button>
-                  <button className="btn btn-sm btn-danger" onClick={() => setDeleting(d)}><Trash2 size={13} /> Xóa</button></div>}</td>}
-            </tr>
-          )))}</tbody>
+          <thead><tr><th style={{ width: 110 }}>Ngày</th><th style={{ width: 170 }}>Nguồn</th><th>Vật tư</th><th className="num" style={{ width: 90 }}>Số vật tư</th><th style={{ width: 190 }}>Người nhập</th><th style={{ width: 150 }} /></tr></thead>
+          <tbody>{pg.shown.map(d => (
+            <tr key={d.id} className="clickable" onClick={() => open(d.id, 'view')} title="Bấm để xem chi tiết phiếu">
+              <td className="nowrap">{fmtDate(d.receipt_date)}<div className="item-code">#{d.id}</div></td>
+              <td className="small">{d.source}{d.supplier ? <div className="item-code">{d.supplier}</div> : null}</td>
+              <td className="small">{items(d)}</td>
+              <td className="num">{d.line_count}</td>
+              <td className="small">{d.created_by_name}<div className="item-code">{fmtDateTime(d.created_at)}</div>
+                {d.updated_at && <div className="item-code" style={{ color: 'var(--td-warning, #b45309)' }}>Sửa: {d.updated_by_name} · {fmtDateTime(d.updated_at)}</div>}</td>
+              <td>{actions(d)}</td>
+            </tr>))}</tbody>
         </table></div>{pg.pager}</>
       )}
-      {editing && <EditReceiptModal doc={editing} onClose={() => setEditing(null)} />}
-      {deleting && <ReasonModal title={`Xóa phiếu nhập #${deleting.id}`} label="Lý do xóa (không bắt buộc)" required={false} confirmText="Xóa phiếu & trừ tồn" tone="danger" busy={busy}
-        onClose={() => setDeleting(null)}
-        onConfirm={async reason => { if (await run('delete_receipt', { id: deleting.id, reason }, `Đã xóa phiếu nhập #${deleting.id}, tồn kho đã trừ lại`)) setDeleting(null); }}>
-        <p className="small" style={{ marginTop: 0 }}>Phiếu ngày {fmtDate(deleting.receipt_date)} · {deleting.lines.length} vật tư: {deleting.lines.slice(0, 4).map(l => l.item_name).join(', ')}{deleting.lines.length > 4 ? '…' : ''}.</p>
-        <p className="small muted">Số đã nhập sẽ được trừ khỏi tồn kho đúng lô. Nếu hàng của phiếu đã xuất dùng / chuyển đi thì không xóa được — khi đó hãy sửa phiếu hoặc kiểm kê.</p>
-      </ReasonModal>}
+      {openId !== null && <ReceiptOpen id={openId} mode={mode} setMode={setMode} canEdit={canEdit} onClose={() => setOpenId(null)} />}
     </section>
+  );
+}
+
+/** Tải chi tiết 1 phiếu rồi mở: xem / sửa / xóa */
+function ReceiptOpen({ id, mode, setMode, canEdit, onClose }: { id: number; mode: 'view' | 'edit' | 'delete'; setMode: (m: 'view' | 'edit' | 'delete') => void; canEdit: boolean; onClose: () => void }) {
+  const r = useRpc<ReceiptDoc[]>('list_receipts', { id });
+  const { run, busy } = useAction();
+  const U = useUnits();
+  const doc = r.data?.[0];
+  if (!doc) return <Modal title={`Phiếu nhập #${id}`} onClose={onClose}>{r.error ? <div className="notice danger">{r.error}</div> : <Loading />}</Modal>;
+  const lines = doc.lines ?? [];
+  if (mode === 'edit') return <EditReceiptModal doc={doc} onClose={onClose} />;
+  if (mode === 'delete') return (
+    <ReasonModal title={`Xóa phiếu nhập #${doc.id}`} label="Lý do xóa (không bắt buộc)" required={false} confirmText="Xóa phiếu & trừ tồn" tone="danger" busy={busy}
+      onClose={onClose}
+      onConfirm={async reason => { if (await run('delete_receipt', { id: doc.id, reason }, `Đã xóa phiếu nhập #${doc.id}, tồn kho đã trừ lại`)) onClose(); }}>
+      <p className="small" style={{ marginTop: 0 }}>Phiếu ngày {fmtDate(doc.receipt_date)} · {lines.length} vật tư: {lines.slice(0, 4).map(l => l.item_name).join(', ')}{lines.length > 4 ? '…' : ''}.</p>
+      <p className="small muted">Số đã nhập sẽ được trừ khỏi tồn kho đúng lô. Nếu hàng của phiếu đã xuất dùng / chuyển đi thì không xóa được — khi đó hãy sửa phiếu hoặc kiểm kê.</p>
+    </ReasonModal>);
+  return (
+    <Modal size="wide" title={`Phiếu nhập #${doc.id} · ${fmtDate(doc.receipt_date)}`} onClose={onClose} footer={<>
+      {canEdit && <button className="btn btn-danger" onClick={() => setMode('delete')}><Trash2 size={15} /> Xóa phiếu</button>}
+      <span className="spacer" />
+      <button className="btn" onClick={onClose}>Đóng</button>
+      {canEdit && <button className="btn btn-primary" onClick={() => setMode('edit')}><Pencil size={15} /> Sửa phiếu</button>}
+    </>}>
+      <div className="detail-grid">
+        <div><small>Chi nhánh</small><b>{doc.branch_name}</b></div>
+        <div><small>Nguồn</small><b>{doc.source}</b></div>
+        <div><small>Nhà cung cấp</small><b>{doc.supplier || '—'}</b></div>
+        <div><small>Người nhập</small><b>{doc.created_by_name}</b> <span className="small muted">{fmtDateTime(doc.created_at)}</span></div>
+      </div>
+      {doc.note && <p className="small" style={{ marginTop: 0 }}>Ghi chú: {doc.note}</p>}
+      {doc.updated_at && <p className="small" style={{ marginTop: 0, color: 'var(--td-warning)' }}>Đã sửa bởi {doc.updated_by_name} lúc {fmtDateTime(doc.updated_at)}</p>}
+      <div className="table-wrap cards-sm"><table className="data">
+        <thead><tr><th>Vật tư</th><th className="num">SL nhập</th><th className="num">Quy ra</th><th>Lô</th><th>Hạn dùng</th></tr></thead>
+        <tbody>{lines.map(ln => (
+          <tr key={ln.id}>
+            <td><span className="item-name">{ln.item_name}</span> <span className="item-code">{ln.item_code}</span></td>
+            <td className="num" title={`Ghi trên phiếu: ${fmtQty(ln.input_qty)} ${ln.input_unit}`}>{U(ln.qty, ln.item_id, ln.unit)}</td>
+            <td className="num">{fmtQty(ln.qty)} {ln.unit}</td>
+            <td className="mono small">{ln.lot_no || '—'}</td><td className="small">{fmtDate(ln.expiry_date)}</td>
+          </tr>))}</tbody>
+      </table></div>
+    </Modal>
   );
 }
 
@@ -283,7 +317,7 @@ function EditReceiptModal({ doc, onClose }: { doc: ReceiptDoc; onClose: () => vo
   const [head, setHead] = useState<Head>({ date: doc.receipt_date, supplier: doc.supplier ?? '', source: doc.source, note: doc.note ?? '' });
   const [lines, setLinesState] = useState<Line[] | null>(null);
   // Dựng dòng khi đã có danh mục (cần biết đơn vị nhập của vật tư)
-  const ready = lines ?? (items.data ? doc.lines.map(ln => {
+  const ready = lines ?? (items.data ? (doc.lines ?? []).map(ln => {
     const it = byId.get(ln.item_id);
     const purchase = Boolean(it?.purchase_unit && ln.input_unit === it.purchase_unit);
     return { key: seq++, item_id: ln.item_id, qty: String(purchase ? ln.input_qty : ln.qty), unit_mode: purchase ? 'purchase' : 'base', lot_no: ln.lot_no, expiry_date: ln.expiry_date ?? '' } as Line;

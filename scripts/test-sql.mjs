@@ -188,7 +188,9 @@ await ok('Sửa phiếu nhập: tăng / giảm / bỏ dòng, tồn điều chỉ
   await call(U(1), 'edit_receipt', { id: docId, supplier: 'NCC B', lines: [{ item_id: a, qty: 8, unit_mode: 'base', lot_no: 'SUA1', expiry_date: '2030-01-01' }] });
   assert(await lot('TT-LIDO', 'SUA1') === 8, 'tăng 5 → 8 chưa đúng');
   assert(await lot('TT-MEPI', 'SUA2') === 0, 'bỏ dòng phải trừ hết lô SUA2');
-  const d = (await call(U(1), 'list_receipts', { branch_id: 5 })).find(x => x.id === docId);
+  const sum = (await call(U(1), 'list_receipts', { branch_id: 5 })).find(x => x.id === docId);
+  assert(sum.lines === undefined && Number(sum.line_count) === 1 && sum.preview, 'danh sách phải là bản tóm tắt');
+  const d = (await call(U(1), 'list_receipts', { id: docId }))[0];
   assert(d.supplier === 'NCC B' && d.lines.length === 1 && d.updated_by_name, 'phiếu chưa cập nhật');
   // dùng bớt 7 rồi giảm phiếu về 1 → kho chỉ còn 1, giảm 7 là không được
   await call(U(3), 'record_usage', { branch_id: 5, lines: [{ item_id: a, qty: 7, reason: 'Điều trị', lot_id: (await db.query("select id from stock_lots where branch_id=5 and lot_no='SUA1'")).rows[0].id }] });

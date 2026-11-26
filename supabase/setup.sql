@@ -1066,8 +1066,16 @@ declare
   v_branch smallint := nullif(p->>'branch_id', '')::smallint;
   v_from   date := coalesce(nullif(p->>'from', '')::date, app.today() - 30);
   v_to     date := coalesce(nullif(p->>'to', '')::date, app.today());
+  v_id     bigint := nullif(p->>'id', '')::bigint;          -- lấy 1 phiếu (kèm chi tiết)
+  v_lines  boolean := v_id is not null or coalesce((p->>'with_lines')::boolean, false);
 begin
-  if v_branch is null then
+  if v_id is not null then
+    select branch_id into v_branch from receipt_docs where id = v_id;
+    if v_branch is null then raise exception 'Không tìm thấy phiếu nhập.'; end if;
+    if not app.can_act(v_branch) and not app.has('inv_report_view_all') then
+      raise exception 'Bạn chỉ xem được phiếu của chi nhánh mình.';
+    end if;
+  elsif v_branch is null then
     if not app.has('inv_report_view_all') then
       v_branch := me.branch_id;
       if v_branch is null then raise exception 'Vui lòng chọn chi nhánh.'; end if;
@@ -1080,16 +1088,21 @@ begin
              'branch_name', app.branch_name(d.branch_id),
              'created_by_name', app.person(d.created_by),
              'updated_by_name', app.person(d.updated_by),
+             -- Danh sách chỉ gửi bản tóm tắt (số dòng + vài tên đầu) để đỡ tốn dữ liệu; chi tiết lấy khi mở phiếu
+             'line_count', (select count(*) from receipt_lines rl where rl.doc_id = d.id),
+             'preview', (select string_agg(x.name, ', ') from (select i.name from receipt_lines rl join items i on i.id = rl.item_id
+                          where rl.doc_id = d.id order by rl.id limit 3) x))
+           || case when v_lines then jsonb_build_object(
              'lines', (select coalesce(jsonb_agg(to_jsonb(rl) || jsonb_build_object(
                                 'item_code', i.code, 'item_name', i.name, 'unit', i.unit,
                                 'group_name', g.name) order by rl.id), '[]'::jsonb)
                          from receipt_lines rl join items i on i.id = rl.item_id
                          left join item_groups g on g.id = i.group_id
-                        where rl.doc_id = d.id))
+                        where rl.doc_id = d.id)) else '{}'::jsonb end
            order by d.receipt_date desc, d.id desc), '[]'::jsonb)
       from receipt_docs d
-     where (v_branch is null or d.branch_id = v_branch)
-       and d.receipt_date between v_from and v_to);
+     where (v_id is not null and d.id = v_id)
+        or (v_id is null and (v_branch is null or d.branch_id = v_branch) and d.receipt_date between v_from and v_to));
 end $$;
 
 -- ---------------------------------------------------------------------
