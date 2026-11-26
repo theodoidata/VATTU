@@ -269,8 +269,10 @@ function ReceiptOpen({ id, mode, setMode, canEdit, onClose }: { id: number; mode
   const r = useRpc<ReceiptDoc[]>('list_receipts', { id });
   const { run, busy } = useAction();
   const U = useUnits();
-  const doc = r.data?.[0];
-  if (!doc) return <Modal title={`Phiếu nhập #${id}`} onClose={onClose}>{r.error ? <div className="notice danger">{r.error}</div> : <Loading />}</Modal>;
+  // Chỉ nhận đúng phiếu đã bấm (máy chủ chưa cập nhật SQL sẽ trả cả danh sách → không được lấy nhầm phiếu đầu tiên)
+  const doc = r.data?.find(d => d.id === id);
+  if (!doc) return <Modal title={`Phiếu nhập #${id}`} onClose={onClose}>{r.error ? <div className="notice danger">{r.error}</div>
+    : r.loading ? <Loading /> : <div className="notice warning">Chưa xem được chi tiết phiếu #{id}. Máy chủ cần chạy bản cập nhật SQL mới nhất (setup.sql).</div>}</Modal>;
   const lines = doc.lines ?? [];
   if (mode === 'edit') return <EditReceiptModal doc={doc} onClose={onClose} />;
   if (mode === 'delete') return (
