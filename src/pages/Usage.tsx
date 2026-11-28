@@ -72,7 +72,7 @@ export default function UsagePage() {
               {' '}<button className="btn btn-ghost btn-sm" onClick={() => { draft.clear(); setLines([newLine()]); setNote(''); setDate(today); }}><X size={13} /> Bỏ phiếu tạm</button></span>}
           </div>
           <div className="form-grid" style={{ marginBottom: 10 }}>
-            <Field label="Ngày dùng"><input className="input" type="date" value={date} max={today} min={addDays(today, -7)} onChange={e => setDate(e.target.value)} /></Field>
+            <Field label="Ngày dùng"><input className="input" type="date" value={date} max={today} min={addDays(today, -60)} onChange={e => setDate(e.target.value)} /></Field>
             <Field label="Ghi chú (không bắt buộc)"><input className="input" value={note} onChange={e => setNote(e.target.value)} placeholder="VD: ca chiều, ghế 2…" /></Field>
           </div>
           <div className="table-wrap stack-sm"><table className="data lines-table">
@@ -197,7 +197,7 @@ export default function UsagePage() {
           <div className="wiz-sum"><b>{valid.length} vật tư</b>
             <ul>{valid.map(l => { const r = byId.get(l.item_id!); return <li key={l.key}>{r?.name}: <b>{U(l.qty, l.item_id, r?.unit)}</b>{l.reason !== 'Điều trị' && ` · ${l.reason}`}</li>; })}</ul></div>
           <div className="form-grid">
-            <Field label="Ngày dùng"><input className="input" type="date" value={date} max={today} min={addDays(today, -7)} onChange={e => setDate(e.target.value)} /></Field>
+            <Field label="Ngày dùng"><input className="input" type="date" value={date} max={today} min={addDays(today, -60)} onChange={e => setDate(e.target.value)} /></Field>
             <Field label="Ghi chú (không bắt buộc)"><input className="input" value={note} onChange={e => setNote(e.target.value)} placeholder="VD: ca chiều, ghế 2…" /></Field>
           </div>
         </>}

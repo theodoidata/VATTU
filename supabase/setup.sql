@@ -712,7 +712,7 @@ begin
   perform app.require('inv_usage_create');
   perform app.require_branch(v_branch);
   if v_date > app.today() then raise exception 'Không thể ghi xuất cho ngày trong tương lai.'; end if;
-  if v_date < app.today() - 7 then raise exception 'Chỉ được ghi bù tối đa 7 ngày trước.'; end if;
+  if v_date < app.today() - 60 then raise exception 'Chỉ được ghi bù tối đa 60 ngày (2 tháng) trước.'; end if;
   if jsonb_array_length(coalesce(p->'lines', '[]'::jsonb)) = 0 then
     raise exception 'Chưa chọn vật tư nào.';
   end if;
